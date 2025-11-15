@@ -17,14 +17,4 @@ const pool = promise_1.default.createPool({
     queueLimit: 0,
     timezone: "Z", // evita surpresa com datas
 });
-// Testa a conexão
-pool
-    .getConnection()
-    .then((connection) => {
-    console.log("Conectado ao banco de dados MySQL com sucesso!");
-    connection.release();
-})
-    .catch((err) => {
-    console.error("Erro ao conectar ao banco de dados MySQL:", err);
-});
 exports.default = pool;
