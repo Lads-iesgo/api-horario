@@ -21,6 +21,9 @@ app.use(
 );
 
 app.use(express.json());
+// Cookie parser para processar cookies nas requisições
+// CSRF Protection: Os cookies estão configurados com sameSite: 'strict' em jwt.config.ts
+// que previne ataques CSRF ao não permitir que o cookie seja enviado em requisições cross-site
 app.use(cookieParser());
 
 // Adiciona uma rota para a raiz

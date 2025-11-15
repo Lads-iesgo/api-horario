@@ -5,6 +5,8 @@ import { authenticate } from "../middlewares/auth.middleware";
 const router = express.Router();
 
 // Rota de login - não requer autenticação
+// TODO: Adicionar rate limiting para prevenir ataques de força bruta (ex: express-rate-limit)
+// Exemplo: router.post("/login", rateLimiter, AuthController.login);
 router.post("/login", AuthController.login);
 
 // Rota de logout - requer autenticação
