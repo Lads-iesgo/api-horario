@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import mysql from "mysql2/promise";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 
 import celulaRoutes from "./celula.routes";
 import cursoRoutes from "./curso.routes";
@@ -12,6 +13,7 @@ import disponibilidadeRoutes from "./disponibilidade.routes";
 import professorDisciplinaRoutes from "./professorDisciplina.routes";
 import usuarioRoutes from "./usuario.routes";
 import salaRoutes from "./sala.routes";
+import authRoutes from "./auth.routes";
 
 const app = express();
 
@@ -25,12 +27,14 @@ app.use(
 );
 
 app.use(express.json());
+app.use(cookieParser());
 
 // Adiciona uma rota para a raiz
 app.get("/", (req: Request, res: Response) => {
 	res.status(200).json({ message: "API Grade Horário está funcionando!" });
 });
 
+app.use("/auth", authRoutes);
 app.use("/celula", celulaRoutes);
 app.use("/curso", cursoRoutes);
 app.use("/disciplina", disciplinaRoutes);
