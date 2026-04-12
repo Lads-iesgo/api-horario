@@ -3,11 +3,12 @@ import {
 	getDiaSemana,
 	getDiaSemanaById,
 } from "../controller/diaSemanaController";
+import { authenticate } from "../middleware/authenticate";
 
 const router = express.Router();
 
-//Rotas Perfil
-router.get("/", getDiaSemana); // GET /diaSemana
-router.get("/:idDiaSemana", getDiaSemanaById); // GET /diaSemana/idDiaSemana
+//Rotas Dia Semana
+router.get("/", authenticate, getDiaSemana); // GET /diaSemana
+router.get("/:idDiaSemana", authenticate, getDiaSemanaById); // GET /diaSemana/idDiaSemana
 
 export default router;

@@ -4,12 +4,14 @@ import {
 	getDisponibilidadeById,
 	createDisponibilidade,
 } from "../controller/disponibilidadeController";
+import { authenticate } from "../middleware/authenticate";
+import { authorize } from "../middleware/authorize";
 
 const router = express.Router();
 
-//Rotas Perfil
-router.get("/", getDisponibilidade); // GET /disponibilidade
-router.get("/:idProfessor", getDisponibilidadeById); // GET /disponibilidade/idProfessor
-router.post("/", createDisponibilidade); // POST /disponibilidade
+//Rotas Disponibilidade
+router.get("/", authenticate, getDisponibilidade); // GET /disponibilidade
+router.get("/:idProfessor", authenticate, getDisponibilidadeById); // GET /disponibilidade/idProfessor
+router.post("/", authenticate, authorize("Admin", "Coordenador"), createDisponibilidade); // POST /disponibilidade
 
 export default router;

@@ -1,5 +1,5 @@
-import pool from "../config/db";
 import { Request, Response, NextFunction } from "express";
+import * as diaSemanaService from "../services/diaSemanaService";
 
 export const getDiaSemana = async (
 	req: Request,
@@ -7,7 +7,7 @@ export const getDiaSemana = async (
 	next: NextFunction,
 ) => {
 	try {
-		const [rows] = await pool.query("SELECT * FROM Dia_semana");
+		const rows = await diaSemanaService.findAll();
 		res.status(200).json(rows);
 	} catch (error) {
 		next(error);
@@ -15,23 +15,20 @@ export const getDiaSemana = async (
 };
 
 export const getDiaSemanaById = async (
-	req: Request<{ idDiaSemana: number }>,
+	req: Request,
 	res: Response,
 	next: NextFunction,
 ) => {
 	try {
-		const idDiaSemana = req.params.idDiaSemana;
-		const [rows] = await pool.query(
-			"SELECT * FROM Dia_semana WHERE idDiaSemana = ?",
-			[idDiaSemana],
-		);
+		const idDiaSemana = Number(req.params.idDiaSemana);
+		const row = await diaSemanaService.findById(idDiaSemana);
 
-		if (Array.isArray(rows) && rows.length === 0) {
+		if (!row) {
 			res.status(404).json({ message: "Nenhum dia da semana encontrado" });
 			return;
 		}
 
-		res.status(200).json(rows);
+		res.status(200).json(row);
 	} catch (error) {
 		next(error);
 	}

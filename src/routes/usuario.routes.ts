@@ -4,12 +4,14 @@ import {
 	getUsuarioById,
 	createUsuario,
 } from "../controller/usuarioController";
+import { authenticate } from "../middleware/authenticate";
+import { authorize } from "../middleware/authorize";
 
 const router = express.Router();
 
 //Rotas Usuario
-router.get("/", getUsuario); // GET /usuario
-router.get("/:idUsuario", getUsuarioById); // GET /usuario/idUsuario
-router.post("/", createUsuario); // POST /usuario
+router.get("/", authenticate, getUsuario); // GET /usuario
+router.get("/:idUsuario", authenticate, getUsuarioById); // GET /usuario/idUsuario
+router.post("/", authenticate, authorize("Admin"), createUsuario); // POST /usuario
 
 export default router;

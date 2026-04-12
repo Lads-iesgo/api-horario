@@ -1,5 +1,5 @@
-import pool from "../config/db";
 import { Request, Response, NextFunction } from "express";
+import * as disponibilidadeService from "../services/disponibilidadeService";
 
 export const getDisponibilidade = async (
 	req: Request,
@@ -7,9 +7,7 @@ export const getDisponibilidade = async (
 	next: NextFunction,
 ) => {
 	try {
-		const [rows] = await pool.query(
-			"SELECT * FROM vw_disponbibilidade_professor",
-		);
+		const rows = await disponibilidadeService.findAll();
 		res.status(200).json(rows);
 	} catch (error) {
 		next(error);
@@ -17,21 +15,18 @@ export const getDisponibilidade = async (
 };
 
 export const getDisponibilidadeById = async (
-	req: Request<{ idProfessor: number }>,
+	req: Request,
 	res: Response,
 	next: NextFunction,
 ) => {
 	try {
-		const idProfessor = req.params.idProfessor;
-		const [rows] = await pool.query(
-			"SELECT * FROM vw_disponbibilidade_professor WHERE idProfessor = ?",
-			[idProfessor],
-		);
+		const idProfessor = Number(req.params.idProfessor);
+		const rows = await disponibilidadeService.findByProfessor(idProfessor);
 
-		if (Array.isArray(rows) && rows.length === 0) {
+		if (rows.length === 0) {
 			res
 				.status(404)
-				.json({ message: "Nenhum professor com esse id encontrado" });
+				.json({ message: "Nenhuma disponibilidade cadastrada para este professor" });
 			return;
 		}
 
@@ -51,15 +46,11 @@ export const createDisponibilidade = async (
 		if (!idProfessor || !idDiaSemana) {
 			res
 				.status(400)
-				.json({ message: "idProfessor e idDiaSemana são obrigatórios" });
+				.json({ message: "Selecione o professor e o dia da semana" });
 			return;
 		}
-		const [result] = await pool.query(
-			`INSERT INTO Professor_Disponibilidade 
-        (idProfessor, idDiaSemana) 
-        VALUES (?, ?)`,
-			[idProfessor, idDiaSemana],
-		);
+
+		await disponibilidadeService.create({ idProfessor, idDiaSemana });
 
 		res.status(201).json({
 			message: "Disponibilidade cadastrada com sucesso",

@@ -4,12 +4,14 @@ import {
 	getProfessorDisciplinaById,
 	createProfessorDisciplina,
 } from "../controller/professorDisciplinaController";
+import { authenticate } from "../middleware/authenticate";
+import { authorize } from "../middleware/authorize";
 
 const router = express.Router();
 
-//Rotas Perfil
-router.get("/", getProfessorDisciplina); // GET /professorDisciplina
-router.get("/:idDisciplina", getProfessorDisciplinaById); // GET /professorDisciplina/idDisciplina
-router.post("/", createProfessorDisciplina); // POST /professorDisciplina
+//Rotas Professor Disciplina
+router.get("/", authenticate, getProfessorDisciplina); // GET /professorDisciplina
+router.get("/:idDisciplina", authenticate, getProfessorDisciplinaById); // GET /professorDisciplina/idDisciplina
+router.post("/", authenticate, authorize("Admin", "Coordenador"), createProfessorDisciplina); // POST /professorDisciplina
 
 export default router;

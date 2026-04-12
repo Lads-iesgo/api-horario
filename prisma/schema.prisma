@@ -1,0 +1,361 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["views"]
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model alocacao_horario {
+  idAlocacaoHorario Int        @id @default(autoincrement())
+  idGrade           Int
+  idDisciplina      Int
+  idProfessor       Int
+  idDiaSemana       Int
+  idSala            Int?
+  semestre          Int
+  criadoEm          DateTime?  @db.Timestamp(0)
+  criadoPor         Int?
+  atualizadoEm      DateTime?  @db.Timestamp(0)
+  atualizadoPor     Int?
+  dia_semana        dia_semana @relation(fields: [idDiaSemana], references: [idDiaSemana], onDelete: NoAction, onUpdate: NoAction, map: "fk_DiaSemana")
+  disciplina        disciplina @relation(fields: [idDisciplina], references: [idDisciplina], onDelete: NoAction, onUpdate: NoAction, map: "fk_Disciplina")
+  grade             grade      @relation(fields: [idGrade], references: [idGrade], onDelete: NoAction, onUpdate: NoAction, map: "fk_grade")
+  professor         professor  @relation(fields: [idProfessor], references: [idProfessor], onDelete: NoAction, onUpdate: NoAction, map: "fk_professor")
+  sala              sala?      @relation(fields: [idSala], references: [idSala], onDelete: NoAction, onUpdate: NoAction, map: "fk_sala")
+
+  @@index([idDiaSemana], map: "fk_DiaSemana_idx")
+  @@index([idDisciplina], map: "fk_Disciplina_idx")
+  @@index([idGrade], map: "fk_grade_idx")
+  @@index([idProfessor], map: "fk_professor_idx")
+  @@index([idSala], map: "fk_sala_idx")
+}
+
+model curso {
+  idCurso          Int                @id @default(autoincrement())
+  codigoCurso      String             @db.VarChar(10)
+  nomeCurso        String             @unique(map: "nomeCurso_UNIQUE") @db.VarChar(50)
+  descricaoCurso   String?            @db.VarChar(255)
+  duracaoSemestres Int?
+  criadoEm         DateTime?          @db.Timestamp(0)
+  criadoPor        Int?
+  atualizadoEm     DateTime?          @db.Timestamp(0)
+  atualizadoPor    Int?
+  curso_disciplina curso_disciplina[]
+  grade            grade[]
+  professor_curso  professor_curso[]
+}
+
+model curso_disciplina {
+  idCurso      Int
+  idDisciplina Int
+  periodo      Int?
+  curso        curso      @relation(fields: [idCurso], references: [idCurso], onDelete: NoAction, onUpdate: NoAction, map: "fk_cursos_disciplina")
+  disciplina   disciplina @relation(fields: [idDisciplina], references: [idDisciplina], onDelete: NoAction, onUpdate: NoAction, map: "fk_disciplina_cursos")
+
+  @@id([idCurso, idDisciplina])
+  @@index([idDisciplina], map: "fk_disciplina_cursos_idx")
+}
+
+model dia_semana {
+  idDiaSemana               Int                         @id @default(autoincrement())
+  diaSemana                 String                      @db.VarChar(45)
+  alocacao_horario          alocacao_horario[]
+  professor_disponibilidade professor_disponibilidade[]
+}
+
+model disciplina {
+  idDisciplina         Int                    @id @default(autoincrement())
+  codigoDisciplina     String                 @unique(map: "codigoDisciplina_UNIQUE") @db.VarChar(45)
+  nomeDisciplina       String                 @db.VarChar(100)
+  cargaHoraria         Int?
+  modalidade           disciplina_modalidade?
+  tipoSala             disciplina_tipoSala?
+  criadoEm             DateTime?              @db.Timestamp(0)
+  criadoPor            Int?
+  atualizadoEm         DateTime?              @db.Timestamp(0)
+  atualizadoPor        Int?
+  alocacao_horario     alocacao_horario[]
+  curso_disciplina     curso_disciplina[]
+  disciplina_professor disciplina_professor[]
+
+  @@index([nomeDisciplina], map: "nomeDisciplina_idx")
+}
+
+model disciplina_professor {
+  idDisciplina Int
+  idProfessor  Int
+  disciplina   disciplina @relation(fields: [idDisciplina], references: [idDisciplina], onDelete: NoAction, onUpdate: NoAction, map: "fk_disciplina_professor")
+  professor    professor  @relation(fields: [idProfessor], references: [idProfessor], onDelete: NoAction, onUpdate: NoAction, map: "fk_professor_disciplina")
+
+  @@id([idDisciplina, idProfessor])
+  @@index([idProfessor], map: "fk_professor_disciplina_idx")
+}
+
+model grade {
+  idGrade          Int                @id @default(autoincrement())
+  idCurso          Int
+  anoLetivo        Int
+  semestreLetivo   Int
+  criadoEm         DateTime?          @db.Timestamp(0)
+  criadoPor        Int?
+  atualizadoEm     DateTime?          @db.Timestamp(0)
+  atualizadoPor    Int?
+  alocacao_horario alocacao_horario[]
+  curso            curso              @relation(fields: [idCurso], references: [idCurso], onDelete: NoAction, onUpdate: NoAction, map: "fk_curso")
+
+  @@index([idCurso], map: "fk_curso_idx")
+}
+
+model perfil {
+  idPerfil   Int       @id @default(autoincrement())
+  nomePerfil String    @unique(map: "nomePerfil_UNIQUE") @db.VarChar(100)
+  usuario    usuario[]
+}
+
+model professor {
+  idProfessor               Int                         @id @default(autoincrement())
+  nomeProfessor             String                      @db.VarChar(100)
+  titulacao                 professor_titulacao
+  email                     String?                     @unique(map: "email_UNIQUE") @db.VarChar(100)
+  curriculoLattes           String?                     @unique(map: "curriculo_lattes_UNIQUE") @db.VarChar(100)
+  idCoordenador             Int?
+  idUsuario                 Int?                        @unique(map: "idUsuario_UNIQUE")
+  criadoEm                  DateTime?                   @db.Timestamp(0)
+  criadoPor                 Int?
+  atualizadoEm              DateTime?                   @db.Timestamp(0)
+  atualizadoPor             Int?
+  alocacao_horario          alocacao_horario[]
+  disciplina_professor      disciplina_professor[]
+  professor                 professor?                  @relation("professorToprofessor", fields: [idCoordenador], references: [idProfessor], onDelete: NoAction, onUpdate: NoAction, map: "fk_professor_coordenador")
+  other_professor           professor[]                 @relation("professorToprofessor")
+  usuario                   usuario?                    @relation(fields: [idUsuario], references: [idUsuario], onDelete: NoAction, onUpdate: NoAction, map: "fk_usuario_professor")
+  professor_curso           professor_curso[]
+  professor_disponibilidade professor_disponibilidade[]
+
+  @@index([idCoordenador], map: "fk_professor_coordenador_idx")
+  @@index([nomeProfessor], map: "nomeProfessor_idx")
+}
+
+model professor_curso {
+  idProfessor   Int
+  idCurso       Int
+  isCoordenador Int       @default(0) @db.TinyInt
+  curso         curso     @relation(fields: [idCurso], references: [idCurso], onDelete: NoAction, onUpdate: NoAction, map: "fk_curso_professor")
+  professor     professor @relation(fields: [idProfessor], references: [idProfessor], onDelete: NoAction, onUpdate: NoAction, map: "fk_professor_curso")
+
+  @@id([idProfessor, idCurso])
+  @@index([idCurso], map: "fk_curso_professor_idx")
+}
+
+model professor_disponibilidade {
+  idProfessor Int
+  idDiaSemana Int
+  dia_semana  dia_semana @relation(fields: [idDiaSemana], references: [idDiaSemana], onDelete: NoAction, onUpdate: NoAction, map: "fk_DiaSemana_professor")
+  professor   professor  @relation(fields: [idProfessor], references: [idProfessor], onDelete: NoAction, onUpdate: NoAction, map: "fk_professor_DiaSemana")
+
+  @@id([idProfessor, idDiaSemana])
+  @@index([idDiaSemana], map: "fk_disponibilidade_professor_idx")
+}
+
+model sala {
+  idSala           Int                @id @default(autoincrement())
+  codigoSala       String             @unique(map: "codigoSala_UNIQUE") @db.VarChar(20)
+  nomeSala         String?            @db.VarChar(100)
+  capacidadeSala   Int
+  metrosQuadrados  Int?
+  tipoSala         sala_tipoSala
+  recursos         String?            @db.Text
+  localizacaoSala  String?            @db.VarChar(100)
+  criadoEm         DateTime?          @db.Timestamp(0)
+  criadoPor        Int?
+  atualizadoEm     DateTime?          @db.Timestamp(0)
+  atualizadoPor    Int?
+  alocacao_horario alocacao_horario[]
+
+  @@index([capacidadeSala], map: "capacidadeSala_idx")
+  @@index([nomeSala], map: "nomeSala_idx")
+  @@index([tipoSala], map: "salaTipoSala_idx")
+}
+
+model usuario {
+  idUsuario     Int        @id @default(autoincrement())
+  nomeUsuario   String     @db.VarChar(100)
+  emailUsuario  String     @unique(map: "emailUsuario_UNIQUE") @db.VarChar(100)
+  senha         String     @db.VarChar(255)
+  idPerfil      Int
+  ativo         Int        @default(1) @db.TinyInt
+  criadoEm      DateTime?  @db.Timestamp(0)
+  criadoPor     Int?
+  atualizadoEm  DateTime?  @db.Timestamp(0)
+  atualizadoPor Int?
+  professor     professor?
+  perfil        perfil     @relation(fields: [idPerfil], references: [idPerfil], onDelete: NoAction, onUpdate: NoAction, map: "fk_perfil_usuario")
+
+  @@index([idPerfil], map: "fk_perfil_usuario_idx")
+  @@index([nomeUsuario], map: "nomeUsuario_idx")
+}
+
+view vw_celulas {
+  idCelula         Int                    @unique @default(0)
+  semestreCelula   Int
+  idCurso          Int                    @default(0)
+  curso            String                 @db.VarChar(50)
+  duracaoSemestres Int?
+  idDisciplina     Int                    @default(0)
+  codigoDisciplina String                 @db.VarChar(45)
+  disciplina       String                 @db.VarChar(100)
+  modalidade       vw_celulas_modalidade?
+  tipo_sala        vw_celulas_tipo_sala?
+  idProfessor      Int                    @default(0)
+  professor        String                 @db.VarChar(100)
+  titulacao        vw_celulas_titulacao
+  idDiaSemana      Int                    @default(0)
+  dia_semana       String                 @db.VarChar(45)
+  idGrade          Int                    @default(0)
+  semestreLetivo   Int
+  anoLetivo        Int
+  idSala           Int?
+  codigoSala       String?                @db.VarChar(20)
+  nomeSala         String?                @db.VarChar(100)
+}
+
+view vw_celulas_por_curso {
+  idCurso        Int    @default(0)
+  curso          String @db.VarChar(50)
+  idGrade        Int    @default(0)
+  semestreLetivo Int
+  anoLetivo      Int
+  idDisciplina   Int    @default(0)
+  disciplina     String @db.VarChar(100)
+  idProfessor    Int    @default(0)
+  professor      String @db.VarChar(100)
+  idDiaSemana    Int    @default(0)
+  dia_semana     String @db.VarChar(45)
+  idSala         Int?
+
+  @@unique([idCurso, idGrade, idDisciplina, idProfessor, idDiaSemana])
+}
+
+view vw_disciplinas_professores_por_curso {
+  idCurso       Int     @default(0)
+  curso         String  @default("") @db.VarChar(50)
+  idDisciplina  Int     @default(0)
+  disciplina    String  @default("") @db.VarChar(100)
+  modalidade    String? @db.VarChar(10)
+  idProfessor   Int     @default(0)
+  nomeProfessor String  @default("") @db.VarChar(100)
+  titulacao     String  @default("") @db.VarChar(12)
+
+  @@unique([idCurso, idDisciplina, idProfessor])
+}
+
+view vw_disciplina_professor {
+  idProfessor    Int    @default(0)
+  nomeProfessor  String @db.VarChar(100)
+  idDisciplina   Int    @default(0)
+  nomeDisciplina String @db.VarChar(100)
+
+  @@unique([idProfessor, idDisciplina])
+}
+
+view vw_disponbibilidade_professor {
+  idProfessor   Int    @default(0)
+  nomeProfessor String @db.VarChar(100)
+  idDiaSemana   Int    @default(0)
+  diaSemana     String @db.VarChar(45)
+
+  @@unique([idProfessor, idDiaSemana])
+}
+
+view vw_disciplina_curso {
+  idDisciplina     Int    @default(0)
+  nomeDisciplina   String @db.VarChar(100)
+  codigoDisciplina String @db.VarChar(45)
+  periodo          Int?
+  idCurso          Int    @default(0)
+  nomeCurso        String @db.VarChar(50)
+
+  @@unique([idDisciplina, idCurso])
+}
+
+view vw_professor_curso {
+  idProfessor   Int    @default(0)
+  nomeProfessor String @default("") @db.VarChar(100)
+  titulacao     String @default("") @db.VarChar(12)
+  idCurso       Int    @default(0)
+  codigoCurso   String @default("") @db.VarChar(10)
+  nomeCurso     String @default("") @db.VarChar(50)
+
+  @@unique([idProfessor, idCurso])
+}
+
+view vw_usuario_curso {
+  idUsuario   Int    @default(0)
+  nomeUsuario String @db.VarChar(100)
+  idCurso     Int    @default(0)
+  nomeCurso   String @db.VarChar(50)
+
+  @@unique([idUsuario, idCurso])
+}
+
+view vw_professor_coordenador {
+  idProfessor   Int    @default(0)
+  nomeProfessor String @db.VarChar(100)
+  isCoordenador Int    @default(0) @db.TinyInt
+  idCurso       Int    @default(0)
+  nomeCurso     String @db.VarChar(50)
+
+  @@unique([idProfessor, idCurso])
+}
+
+enum professor_titulacao {
+  graduado
+  especialista
+  mestre
+  doutor
+  doutora
+}
+
+enum disciplina_modalidade {
+  presencial
+  sincrona
+  hibrido
+}
+
+enum disciplina_tipoSala {
+  auditorio
+  laborat_rio  @map("laboratório")
+  sala_de_aula @map("sala de aula")
+  virtual
+}
+
+enum sala_tipoSala {
+  laborat_rio  @map("laboratório")
+  sala_de_aula @map("sala de aula")
+  auditorio
+  virtual
+}
+
+enum vw_celulas_modalidade {
+  presencial
+  sincrona
+  hibrido
+}
+
+enum vw_celulas_tipo_sala {
+  auditorio
+  laborat_rio  @map("laboratório")
+  sala_de_aula @map("sala de aula")
+  virtual
+}
+
+enum vw_celulas_titulacao {
+  graduado
+  especialista
+  mestre
+  doutor
+  doutora
+}

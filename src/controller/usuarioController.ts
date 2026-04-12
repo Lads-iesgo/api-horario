@@ -1,5 +1,5 @@
-import pool from "../config/db";
 import { Request, Response, NextFunction } from "express";
+import * as usuarioService from "../services/usuarioService";
 
 export const getUsuario = async (
 	req: Request,
@@ -7,7 +7,7 @@ export const getUsuario = async (
 	next: NextFunction,
 ) => {
 	try {
-		const [rows] = await pool.query("SELECT * FROM usuarios");
+		const rows = await usuarioService.findAll();
 		res.status(200).json(rows);
 	} catch (error) {
 		next(error);
@@ -15,17 +15,14 @@ export const getUsuario = async (
 };
 
 export const getUsuarioById = async (
-	req: Request<{ idUsuario: number }>,
+	req: Request,
 	res: Response,
 	next: NextFunction,
 ) => {
 	try {
-		const idUsuario = req.params.idUsuario;
-		const [rows] = await pool.query(
-			"SELECT * FROM usuarios WHERE idUsuario = ?",
-			[idUsuario],
-		);
-		res.status(200).json(rows);
+		const idUsuario = Number(req.params.idUsuario);
+		const row = await usuarioService.findById(idUsuario);
+		res.status(200).json(row);
 	} catch (error) {
 		next(error);
 	}
@@ -38,27 +35,26 @@ export const createUsuario = async (
 ) => {
 	try {
 		const { nomeUsuario, emailUsuario, senha, idPerfil, ativo } = req.body;
+
 		if (!nomeUsuario || !emailUsuario || !senha || !idPerfil) {
 			res.status(400).json({
-				message: "nomeUsuario, emailUsuario, senha e idPerfil são obrigatórios",
+				message: "Preencha o nome, email, senha e perfil do usuário",
 			});
 			return;
 		}
-		const [result]: any = await pool.query(
-			`INSERT INTO usuarios 
-        (nomeUsuario, emailUsuario, senha, idPerfil, ativo)
-        VALUES (?, ?, ?, ?, 1)`,
-			[nomeUsuario, emailUsuario, senha, idPerfil, ativo],
-		);
+
+		// Bug corrigido: agora o campo "ativo" do body é respeitado (default 1)
+		const usuario = await usuarioService.create({
+			nomeUsuario,
+			emailUsuario,
+			senha,
+			idPerfil,
+			ativo: ativo ?? 1,
+		});
+
 		res.status(201).json({
 			message: "Usuário criado com sucesso",
-			data: {
-				idUsuario: result.insertId,
-				nomeUsuario,
-				emailUsuario,
-				idPerfil,
-				ativo: ativo,
-			},
+			data: usuario,
 		});
 	} catch (error) {
 		next(error);

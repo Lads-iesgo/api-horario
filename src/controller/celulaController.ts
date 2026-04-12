@@ -1,5 +1,159 @@
-import pool from "../config/db";
 import { Request, Response, NextFunction } from "express";
+import * as celulaService from "../services/celulaService";
+import { isCursoInScope } from "../middleware/validateScope";
+
+interface ConflictResult {
+	status: number;
+	body: object;
+}
+
+// Validação centralizada de conflitos — usada por create e update
+// propagacaoGradeIds: grades onde a disciplina será propagada (exclui dos checks de "outro curso")
+// excludeIds: IDs de células a ignorar (para update de registros já existentes)
+const validateConflicts = async (
+	idGrade: number,
+	idDisciplina: number,
+	idProfessor: number,
+	idDiaSemana: number,
+	semestre: number,
+	novaCelula: { professor: string; disciplina: string; curso: string; diaSemana: string },
+	propagacaoGradeIds: number[],
+	excludeIds?: number[],
+): Promise<ConflictResult | null> => {
+	// 1. Disciplina já existe na mesma grade/semestre (independente do dia)
+	const discGradeConflict = await celulaService.findConflictDisciplinaMesmaGrade(
+		idDisciplina,
+		idGrade,
+		semestre,
+		excludeIds,
+	);
+
+	if (discGradeConflict.length > 0) {
+		const c = discGradeConflict[0];
+		return {
+			status: 409,
+			body: {
+				message: `A disciplina "${novaCelula.disciplina}" já está cadastrada no curso "${c.curso}", semestre ${c.semestreCelula}, dia ${c.dia_semana}`,
+				tipo: "disciplina_mesma_grade",
+				tentativa: {
+					curso: novaCelula.curso,
+					disciplina: novaCelula.disciplina,
+					professor: novaCelula.professor,
+					dia: novaCelula.diaSemana,
+					semestre,
+				},
+				conflito: {
+					curso: c.curso,
+					disciplina: c.disciplina,
+					professor: c.professor,
+					dia: c.dia_semana,
+					semestre: c.semestreCelula,
+				},
+			},
+		};
+	}
+
+	// 2. Disciplina já alocada no mesmo dia — exclui grades de propagação (pois é esperado)
+	const discDiaConflict = await celulaService.findConflictDisciplinaMesmoDia(
+		idDisciplina,
+		idDiaSemana,
+		excludeIds,
+		propagacaoGradeIds,
+	);
+
+	if (discDiaConflict.length > 0) {
+		const c = discDiaConflict[0];
+		return {
+			status: 409,
+			body: {
+				message: `A disciplina "${novaCelula.disciplina}" já está cadastrada no curso "${c.curso}", dia ${c.dia_semana}, semestre ${c.semestreCelula}`,
+				tipo: "disciplina_mesmo_dia",
+				tentativa: {
+					curso: novaCelula.curso,
+					disciplina: novaCelula.disciplina,
+					professor: novaCelula.professor,
+					dia: novaCelula.diaSemana,
+					semestre,
+				},
+				conflito: {
+					curso: c.curso,
+					disciplina: c.disciplina,
+					professor: c.professor,
+					dia: c.dia_semana,
+					semestre: c.semestreCelula,
+				},
+			},
+		};
+	}
+
+	// 3. Professor já alocado no mesmo dia (qualquer curso)
+	const profDiaConflict = await celulaService.findConflictProfessorMesmoDia(
+		idProfessor,
+		idDiaSemana,
+		excludeIds,
+	);
+
+	if (profDiaConflict.length > 0) {
+		const c = profDiaConflict[0];
+		return {
+			status: 409,
+			body: {
+				message: `O professor "${novaCelula.professor}" já está alocado na disciplina "${c.disciplina}" do curso "${c.curso}" no dia ${c.dia_semana}`,
+				tipo: "professor_mesmo_dia",
+				tentativa: {
+					curso: novaCelula.curso,
+					disciplina: novaCelula.disciplina,
+					professor: novaCelula.professor,
+					dia: novaCelula.diaSemana,
+					semestre,
+				},
+				conflito: {
+					curso: c.curso,
+					disciplina: c.disciplina,
+					professor: c.professor,
+					dia: c.dia_semana,
+					semestre: c.semestreCelula,
+				},
+			},
+		};
+	}
+
+	// 4. Professor já leciona mesma disciplina em outro curso — exclui grades de propagação
+	const profDiscConflict = await celulaService.findConflictProfessorMesmaDisciplina(
+		idProfessor,
+		idDisciplina,
+		idGrade,
+		excludeIds,
+		propagacaoGradeIds,
+	);
+
+	if (profDiscConflict.length > 0) {
+		const c = profDiscConflict[0];
+		return {
+			status: 409,
+			body: {
+				message: `O professor "${novaCelula.professor}" já leciona a disciplina "${c.disciplina}" no curso "${c.curso}" (dia ${c.dia_semana})`,
+				tipo: "professor_mesma_disciplina",
+				tentativa: {
+					curso: novaCelula.curso,
+					disciplina: novaCelula.disciplina,
+					professor: novaCelula.professor,
+					dia: novaCelula.diaSemana,
+					semestre,
+				},
+				conflito: {
+					curso: c.curso,
+					disciplina: c.disciplina,
+					professor: c.professor,
+					dia: c.dia_semana,
+					semestre: c.semestreCelula,
+				},
+			},
+		};
+	}
+
+	return null;
+};
 
 export const getCelula = async (
 	req: Request,
@@ -7,7 +161,7 @@ export const getCelula = async (
 	next: NextFunction,
 ) => {
 	try {
-		const [rows] = await pool.query("SELECT * FROM vw_celulas");
+		const rows = await celulaService.findAll(req.scopedCursos!);
 		res.status(200).json(rows);
 	} catch (error) {
 		next(error);
@@ -15,18 +169,23 @@ export const getCelula = async (
 };
 
 export const getCelulaCurso = async (
-	req: Request<{ idCurso: string }>,
+	req: Request,
 	res: Response,
 	next: NextFunction,
 ) => {
 	try {
-		const idCurso = req.params.idCurso;
-		const [rows] = await pool.query(
-			"SELECT * FROM vw_celulas WHERE idCurso = ?",
-			[idCurso],
-		);
+		const idCurso = Number(req.params.idCurso);
 
-		if (Array.isArray(rows) && rows.length === 0) {
+		if (!isCursoInScope(req.scopedCursos, idCurso)) {
+			res.status(403).json({
+				message: "Você não tem permissão para acessar dados deste curso",
+			});
+			return;
+		}
+
+		const rows = await celulaService.findByCurso(idCurso);
+
+		if (rows.length === 0) {
 			res
 				.status(404)
 				.json({ message: "Nenhuma célula encontrada para este curso" });
@@ -48,7 +207,6 @@ export const createCelula = async (
 		const { idGrade, idDisciplina, idProfessor, idDiaSemana, semestre } =
 			req.body;
 
-		// Validação dos campos obrigatórios
 		if (
 			!idGrade ||
 			!idDisciplina ||
@@ -56,114 +214,183 @@ export const createCelula = async (
 			!idDiaSemana ||
 			!semestre
 		) {
-			res.status(400).json({ message: "Todos os campos são obrigatórios" });
+			res.status(400).json({ message: "Preencha todos os campos para cadastrar a aula (grade, disciplina, professor, dia e semestre)" });
 			return;
 		}
 
-		// Buscar informações da nova célula que está sendo cadastrada
-		const [novaCelulaInfo]: any = await pool.query(
-			`SELECT 
-                p.nomeProfessor as professor,
-                d.nomeDisciplina as disciplina,
-                c.nomeCurso as curso,
-                ds.diaSemana
-            FROM Professores p
-            CROSS JOIN Disciplinas d
-            CROSS JOIN Cursos c
-            CROSS JOIN Dia_semana ds
-            CROSS JOIN Alocacao_horario ah
-            WHERE p.idProfessor = ?
-            AND d.idDisciplina = ?
-            AND ah.idGrade = ?
-            AND ds.idDiaSemana = ?
-            LIMIT 1`,
-			[idProfessor, idDisciplina, idGrade, idDiaSemana],
+		const novaCelula = await celulaService.getNovaCelulaInfo(
+			idProfessor,
+			idDisciplina,
+			idGrade,
+			idDiaSemana,
 		);
 
-		// Verificar se o professor já está cadastrado em outra disciplina/curso no mesmo dia
-		const [professorConflict]: any = await pool.query(
-			`SELECT 
-                curso,
-                disciplina,
-                professor,
-                dia_semana
-            FROM vw_celulas 
-            WHERE idProfessor = ? 
-            AND idDiaSemana = ?`,
-			[idProfessor, idDiaSemana],
-		);
-
-		if (Array.isArray(professorConflict) && professorConflict.length > 0) {
-			const conflict = professorConflict[0];
-			const novaCelula = novaCelulaInfo[0];
-			res.status(409).json({
-				message: `O professor ${novaCelula.professor} já está alocado na disciplina "${conflict.disciplina}" do curso "${conflict.curso}" no dia ${conflict.dia_semana}`,
-				tipo: "professor",
-				tentativa: {
-					curso: novaCelula.curso,
-					disciplina: novaCelula.disciplina,
-					professor: novaCelula.professor,
-					dia: novaCelula.dia_semana,
-				},
-				conflito: {
-					curso: conflict.curso,
-					disciplina: conflict.disciplina,
-					professor: conflict.professor,
-					dia: conflict.dia_semana,
-				},
+		if (!novaCelula) {
+			res.status(404).json({
+				message: "Um dos dados selecionados (professor, disciplina, grade ou dia da semana) não foi encontrado no sistema",
 			});
 			return;
 		}
 
-		// Verificar se a disciplina já está cadastrada neste curso no mesmo dia
-		const [disciplinaConflict]: any = await pool.query(
-			`SELECT 
-                curso,
-                disciplina,
-                professor,
-                dia_semana
-            FROM vw_celulas 
-            WHERE idDisciplina = ? 
-            AND idGrade = ? 
-            AND idDiaSemana = ?`,
-			[idDisciplina, idGrade, idDiaSemana],
-		);
-
-		if (Array.isArray(disciplinaConflict) && disciplinaConflict.length > 0) {
-			const conflict = disciplinaConflict[0];
-			const novaCelula = novaCelulaInfo[0];
-			res.status(409).json({
-				message: `A disciplina "${novaCelula.disciplina}" do curso "${novaCelula.curso}" já está cadastrada no dia ${novaCelula.dia_semana} com o professor ${conflict.professor}`,
-				tipo: "disciplina",
-				tentativa: {
-					curso: novaCelula.curso,
-					disciplina: novaCelula.disciplina,
-					professor: novaCelula.professor,
-					dia: novaCelula.dia_semana,
-				},
-				conflito: {
-					curso: conflict.curso,
-					disciplina: conflict.disciplina,
-					professor: conflict.professor,
-					dia: conflict.dia_semana,
-				},
+		if (!isCursoInScope(req.scopedCursos, novaCelula.idCurso)) {
+			res.status(403).json({
+				message: "Você não tem permissão para criar célula para este curso",
 			});
 			return;
 		}
 
-		const [result] = await pool.query(
-			`CALL stp_cadastrar_celula(?, ?, ?, ?, ?)`,
-			[idGrade, idDisciplina, idProfessor, idDiaSemana, semestre],
+		// Buscar grades de propagação (cursos que compartilham a disciplina)
+		const gradesAlvo = await celulaService.findGradesParaPropagacao(
+			idDisciplina,
+			novaCelula.anoLetivo,
+			novaCelula.semestreLetivo,
+		);
+		const propagacaoGradeIds = gradesAlvo.map((g) => g.idGrade);
+
+		const conflict = await validateConflicts(
+			idGrade,
+			idDisciplina,
+			idProfessor,
+			idDiaSemana,
+			semestre,
+			novaCelula,
+			propagacaoGradeIds,
+		);
+
+		if (conflict) {
+			res.status(conflict.status).json(conflict.body);
+			return;
+		}
+
+		const resultado = await celulaService.createComPropagacao(
+			idGrade,
+			idDisciplina,
+			idProfessor,
+			idDiaSemana,
+			semestre,
+			gradesAlvo,
 		);
 
 		res.status(201).json({
-			message: "Célula criada com sucesso",
+			message:
+				resultado.totalGrades > 1
+					? `Célula criada com sucesso e propagada para ${resultado.totalGrades} grade(s)`
+					: "Célula criada com sucesso",
 			data: {
 				idGrade,
 				idDisciplina,
 				idProfessor,
 				idDiaSemana,
 				semestre,
+				propagacao: {
+					totalGrades: resultado.totalGrades,
+					celulasCriadas: resultado.criadas.length,
+				},
+			},
+		});
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const updateCelula = async (
+	req: Request,
+	res: Response,
+	next: NextFunction,
+) => {
+	try {
+		const idCelula = Number(req.params.idCelula);
+
+		if (!idCelula) {
+			res.status(400).json({ message: "Não foi possível identificar a aula selecionada" });
+			return;
+		}
+
+		const alocacaoAtual = await celulaService.findAlocacaoById(idCelula);
+		if (!alocacaoAtual) {
+			res.status(404).json({ message: "Aula não encontrada" });
+			return;
+		}
+
+		if (!isCursoInScope(req.scopedCursos, alocacaoAtual.grade.idCurso)) {
+			res.status(403).json({
+				message: "Você não tem permissão para editar célula deste curso",
+			});
+			return;
+		}
+
+		// Campos atualizáveis via propagação: professor, dia, semestre
+		const idProfessor = req.body.idProfessor ?? alocacaoAtual.idProfessor;
+		const idDiaSemana = req.body.idDiaSemana ?? alocacaoAtual.idDiaSemana;
+		const semestre = req.body.semestre ?? alocacaoAtual.semestre;
+
+		// Grade e disciplina não mudam na propagação
+		const idGrade = alocacaoAtual.idGrade;
+		const idDisciplina = alocacaoAtual.idDisciplina;
+
+		const novaCelula = await celulaService.getNovaCelulaInfo(
+			idProfessor,
+			idDisciplina,
+			idGrade,
+			idDiaSemana,
+		);
+
+		if (!novaCelula) {
+			res.status(404).json({
+				message: "Um dos dados selecionados (professor, disciplina, grade ou dia da semana) não foi encontrado no sistema",
+			});
+			return;
+		}
+
+		// Buscar todas as alocações relacionadas para excluí-las da validação
+		const relacionadas = await celulaService.findAlocacoesRelacionadas(
+			idDisciplina,
+			alocacaoAtual.semestre,
+			alocacaoAtual.grade.anoLetivo,
+			alocacaoAtual.grade.semestreLetivo,
+		);
+		const excludeIds = relacionadas.map((r) => r.idAlocacaoHorario);
+
+		// Grades de propagação
+		const gradesAlvo = await celulaService.findGradesParaPropagacao(
+			idDisciplina,
+			alocacaoAtual.grade.anoLetivo,
+			alocacaoAtual.grade.semestreLetivo,
+		);
+		const propagacaoGradeIds = gradesAlvo.map((g) => g.idGrade);
+
+		const conflict = await validateConflicts(
+			idGrade,
+			idDisciplina,
+			idProfessor,
+			idDiaSemana,
+			semestre,
+			novaCelula,
+			propagacaoGradeIds,
+			excludeIds,
+		);
+
+		if (conflict) {
+			res.status(conflict.status).json(conflict.body);
+			return;
+		}
+
+		const resultado = await celulaService.updateComPropagacao(
+			idDisciplina,
+			alocacaoAtual.semestre,
+			alocacaoAtual.grade.anoLetivo,
+			alocacaoAtual.grade.semestreLetivo,
+			{ idProfessor, idDiaSemana, semestre },
+		);
+
+		res.status(200).json({
+			message: `Célula atualizada com sucesso (${resultado.count} registro(s) atualizados)`,
+			data: {
+				idDisciplina,
+				idProfessor,
+				idDiaSemana,
+				semestre,
+				registrosAtualizados: resultado.count,
 			},
 		});
 	} catch (error) {
@@ -172,38 +399,48 @@ export const createCelula = async (
 };
 
 export const deleteCelula = async (
-	req: Request<{ idCelula: string }>,
+	req: Request,
 	res: Response,
 	next: NextFunction,
 ) => {
 	try {
-		const { idCelula } = req.params;
+		const idCelula = Number(req.params.idCelula);
 
-		// Validação do parâmetro
 		if (!idCelula) {
 			res.status(400).json({
-				message: "O ID da célula é obrigatório",
+				message: "Não foi possível identificar a aula selecionada",
 			});
 			return;
 		}
 
-		// Deleta da tabela Alocacao_horario usando o idCelula
-		const [result]: any = await pool.query(
-			`DELETE FROM Alocacao_horario WHERE idCurso_Disciplina_Professor = ?`,
-			[idCelula],
+		const alocacao = await celulaService.findAlocacaoById(idCelula);
+		if (!alocacao) {
+			res.status(404).json({ message: "Aula não encontrada" });
+			return;
+		}
+
+		if (!isCursoInScope(req.scopedCursos, alocacao.grade.idCurso)) {
+			res.status(403).json({
+				message: "Você não tem permissão para deletar célula deste curso",
+			});
+			return;
+		}
+
+		const resultado = await celulaService.removeComPropagacao(
+			alocacao.idDisciplina,
+			alocacao.semestre,
+			alocacao.grade.anoLetivo,
+			alocacao.grade.semestreLetivo,
 		);
 
-		if (result.affectedRows === 0) {
-			res.status(404).json({
-				message: "Célula não encontrada",
-			});
-			return;
-		}
-
 		res.status(200).json({
-			message: "Célula deletada com sucesso",
+			message:
+				resultado.count > 1
+					? `Célula deletada com sucesso (${resultado.count} registro(s) removidos em grades compartilhadas)`
+					: "Célula deletada com sucesso",
 			data: {
 				idCelula,
+				registrosRemovidos: resultado.count,
 			},
 		});
 	} catch (error) {

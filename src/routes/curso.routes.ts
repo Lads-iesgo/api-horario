@@ -4,12 +4,14 @@ import {
 	getCursoById,
 	createCurso,
 } from "../controller/cursoController";
+import { authenticate } from "../middleware/authenticate";
+import { authorize } from "../middleware/authorize";
 
 const router = express.Router();
 
-//Rotas Perfil
-router.get("/", getCurso); // GET /curso
-router.get("/:idCurso", getCursoById); // GET /curso/idCurso
-router.post("/", createCurso); // POST /curso
+//Rotas Curso
+router.get("/", authenticate, getCurso); // GET /curso
+router.get("/:idCurso", authenticate, getCursoById); // GET /curso/idCurso
+router.post("/", authenticate, authorize("Admin"), createCurso); // POST /curso
 
 export default router;

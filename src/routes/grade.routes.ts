@@ -4,12 +4,14 @@ import {
 	getGradeById,
 	createGrade,
 } from "../controller/gradeController";
+import { authenticate } from "../middleware/authenticate";
+import { authorize } from "../middleware/authorize";
 
 const router = express.Router();
 
-//Rotas Perfil
-router.get("/", getGrade); // GET /grade
-router.get("/:idGrade", getGradeById); // GET /grade/idGrade
-router.post("/", createGrade); // POST /grade
+//Rotas Grade
+router.get("/", authenticate, getGrade); // GET /grade
+router.get("/:idGrade", authenticate, getGradeById); // GET /grade/idGrade
+router.post("/", authenticate, authorize("Admin", "Coordenador"), createGrade); // POST /grade
 
 export default router;

@@ -1,5 +1,5 @@
-import pool from "../config/db";
 import { Request, Response, NextFunction } from "express";
+import * as professorDisciplinaService from "../services/professorDisciplinaService";
 
 export const getProfessorDisciplina = async (
 	req: Request,
@@ -7,7 +7,7 @@ export const getProfessorDisciplina = async (
 	next: NextFunction,
 ) => {
 	try {
-		const [rows] = await pool.query("SELECT * FROM vw_disciplina_professor");
+		const rows = await professorDisciplinaService.findAll();
 		res.status(200).json(rows);
 	} catch (error) {
 		next(error);
@@ -15,21 +15,18 @@ export const getProfessorDisciplina = async (
 };
 
 export const getProfessorDisciplinaById = async (
-	req: Request<{ idDisciplina: number }>,
+	req: Request,
 	res: Response,
 	next: NextFunction,
 ) => {
 	try {
-		const idDisciplina = req.params.idDisciplina;
-		const [rows] = await pool.query(
-			"SELECT * FROM vw_disciplina_professor WHERE idDisciplina = ?",
-			[idDisciplina],
-		);
+		const idDisciplina = Number(req.params.idDisciplina);
+		const rows = await professorDisciplinaService.findByDisciplina(idDisciplina);
 
-		if (Array.isArray(rows) && rows.length === 0) {
+		if (rows.length === 0) {
 			res
 				.status(404)
-				.json({ message: "Nenhum professor com esse id encontrado" });
+				.json({ message: "Nenhum professor vinculado a esta disciplina" });
 			return;
 		}
 
@@ -49,18 +46,14 @@ export const createProfessorDisciplina = async (
 		if (!idProfessor || !idDisciplina) {
 			res
 				.status(400)
-				.json({ message: "idProfessor e idDisciplina são obrigatórios" });
+				.json({ message: "Selecione o professor e a disciplina" });
 			return;
 		}
-		const [result] = await pool.query(
-			`INSERT INTO Disciplina_Professor 
-        (idProfessor, idDisciplina) 
-        VALUES (?, ?)`,
-			[idProfessor, idDisciplina],
-		);
+
+		await professorDisciplinaService.create({ idProfessor, idDisciplina });
 
 		res.status(201).json({
-			message: "Disponibilidade cadastrada com sucesso",
+			message: "Professor vinculado à disciplina com sucesso",
 			data: {
 				idProfessor,
 				idDisciplina,

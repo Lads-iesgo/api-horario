@@ -1,5 +1,24 @@
-import pool from "../config/db";
 import { Request, Response, NextFunction } from "express";
+import * as disciplinaService from "../services/disciplinaService";
+import { disciplina_modalidade, disciplina_tipoSala } from "../generated/prisma/client";
+import { isCursoInScope } from "../middleware/validateScope";
+
+// Mapeamento: valor da API -> valor do enum Prisma
+const modalidadeMap: Record<string, disciplina_modalidade> = {
+	"Presencial": "presencial",
+	"Sincrona": "sincrona",
+	"Hibrido": "hibrido",
+};
+
+const tipoSalaMap: Record<string, disciplina_tipoSala> = {
+	"Laboratório": "laborat_rio",
+	"Sala de Aula": "sala_de_aula",
+	"Auditorio": "auditorio",
+	"Virtual": "virtual",
+};
+
+const modalidadesValidas = Object.keys(modalidadeMap);
+const tiposSalasValidos = Object.keys(tipoSalaMap);
 
 export const getDisciplina = async (
 	req: Request,
@@ -7,7 +26,7 @@ export const getDisciplina = async (
 	next: NextFunction,
 ) => {
 	try {
-		const [rows] = await pool.query("SELECT * FROM Disciplinas");
+		const rows = await disciplinaService.findAll(req.scopedCursos!);
 		res.status(200).json(rows);
 	} catch (error) {
 		next(error);
@@ -15,35 +34,36 @@ export const getDisciplina = async (
 };
 
 export const getDisciplinaById = async (
-	req: Request<{ idDisciplina: number }>,
+	req: Request,
 	res: Response,
 	next: NextFunction,
 ) => {
 	try {
-		const idDisciplina = req.params.idDisciplina;
-		const [rows] = await pool.query(
-			"SELECT * FROM Disciplinas WHERE idDisciplina = ?",
-			[idDisciplina],
-		);
-
-		res.status(200).json(rows);
+		const idDisciplina = Number(req.params.idDisciplina);
+		const row = await disciplinaService.findById(idDisciplina);
+		res.status(200).json(row);
 	} catch (error) {
 		next(error);
 	}
 };
 
 export const getDisciplinaByCurso = async (
-	req: Request<{ idCurso: number }>,
+	req: Request,
 	res: Response,
 	next: NextFunction,
 ) => {
 	try {
-		const idCurso = req.params.idCurso;
-		const [rows] = await pool.query(
-			"SELECT * FROM vw_disciplina_curso WHERE idCurso = ?",
-			[idCurso],
-		);
+		const idCurso = Number(req.params.idCurso);
 
+		// Validar escopo
+		if (!isCursoInScope(req.scopedCursos, idCurso)) {
+			res.status(403).json({
+				message: "Você não tem permissão para acessar dados deste curso",
+			});
+			return;
+		}
+
+		const rows = await disciplinaService.findByCurso(idCurso);
 		res.status(200).json(rows);
 	} catch (error) {
 		next(error);
@@ -77,27 +97,33 @@ export const createDisciplina = async (
 			!idCurso
 		) {
 			res.status(400).json({
-				message: "Todos os campos são obrigatórios",
+				message: "Preencha todos os campos obrigatórios: código, nome, carga horária, modalidade, tipo de sala, semestre e curso",
+			});
+			return;
+		}
+
+		// Validar escopo: só pode criar disciplina para cursos do seu escopo
+		if (!isCursoInScope(req.scopedCursos, idCurso)) {
+			res.status(403).json({
+				message: "Você não tem permissão para criar disciplina para este curso",
 			});
 			return;
 		}
 
 		// Validação da modalidade
-		const modalidadesValidas = ["Presencial", "Online", "Hibrido"];
 		if (!modalidadesValidas.includes(modalidade)) {
 			res.status(400).json({
 				message: "Modalidade inválida",
-				modalidadesValidas: modalidadesValidas,
+				modalidadesValidas,
 			});
 			return;
 		}
 
 		// Validação do tipo de sala
-		const tiposSalasValidos = ["Laboratório", "Sala", "Sincrona"];
 		if (!tiposSalasValidos.includes(tipoSala)) {
 			res.status(400).json({
 				message: "Tipo de sala inválido",
-				tiposSalasValidos: tiposSalasValidos,
+				tiposSalasValidos,
 			});
 			return;
 		}
@@ -119,45 +145,29 @@ export const createDisciplina = async (
 		}
 
 		// Verificar se o curso existe
-		const [cursoRows]: any = await pool.query(
-			"SELECT idCurso FROM Cursos WHERE idCurso = ?",
-			[idCurso],
-		);
-
-		if (Array.isArray(cursoRows) && cursoRows.length === 0) {
+		const curso = await disciplinaService.findCursoById(idCurso);
+		if (!curso) {
 			res.status(404).json({
 				message: "Curso não encontrado",
 			});
 			return;
 		}
 
-		// Inserir a disciplina
-		const [result] = await pool.query(
-			`INSERT INTO Disciplinas 
-			(codigoDisciplina, nomeDisciplina, cargaHoraria, modalidade, tipoSala, semestreDisciplina) 
-			VALUES (?, ?, ?, ?, ?, ?)`,
-			[
-				codigoDisciplina,
-				nomeDisciplina,
-				cargaHoraria,
-				modalidade,
-				tipoSala,
-				semestreDisciplina,
-			],
-		);
-
-		const idDisciplina = (result as any).insertId;
-
-		// Vincular a disciplina ao curso na tabela curso_disciplina
-		await pool.query(
-			`INSERT INTO curso_disciplina (idCurso, idDisciplina) VALUES (?, ?)`,
-			[idCurso, idDisciplina],
-		);
+		// Criar disciplina e vincular ao curso (transação)
+		const disciplina = await disciplinaService.create({
+			codigoDisciplina,
+			nomeDisciplina,
+			cargaHoraria,
+			modalidade: modalidadeMap[modalidade],
+			tipoSala: tipoSalaMap[tipoSala],
+			semestreDisciplina,
+			idCurso,
+		});
 
 		res.status(201).json({
 			message: "Disciplina criada e vinculada ao curso com sucesso",
 			data: {
-				idDisciplina,
+				idDisciplina: disciplina.idDisciplina,
 				codigoDisciplina,
 				nomeDisciplina,
 				cargaHoraria,
@@ -183,18 +193,22 @@ export const createCursoDisciplina = async (
 		// Validação dos campos obrigatórios
 		if (!idDisciplina || !idCurso) {
 			res.status(400).json({
-				message: "Os campos idDisciplina e idCurso são obrigatórios",
+				message: "Selecione a disciplina e o curso para realizar a vinculação",
+			});
+			return;
+		}
+
+		// Validar escopo
+		if (!isCursoInScope(req.scopedCursos, idCurso)) {
+			res.status(403).json({
+				message: "Você não tem permissão para vincular disciplina a este curso",
 			});
 			return;
 		}
 
 		// Verificar se o curso existe
-		const [cursoRows]: any = await pool.query(
-			"SELECT idCurso FROM Cursos WHERE idCurso = ?",
-			[idCurso],
-		);
-
-		if (Array.isArray(cursoRows) && cursoRows.length === 0) {
+		const curso = await disciplinaService.findCursoById(idCurso);
+		if (!curso) {
 			res.status(404).json({
 				message: "Curso não encontrado",
 			});
@@ -202,12 +216,8 @@ export const createCursoDisciplina = async (
 		}
 
 		// Verificar se a disciplina existe
-		const [disciplinaRows]: any = await pool.query(
-			"SELECT idDisciplina FROM Disciplinas WHERE idDisciplina = ?",
-			[idDisciplina],
-		);
-
-		if (Array.isArray(disciplinaRows) && disciplinaRows.length === 0) {
+		const disciplina = await disciplinaService.findById(idDisciplina);
+		if (!disciplina) {
 			res.status(404).json({
 				message: "Disciplina não encontrada",
 			});
@@ -215,17 +225,15 @@ export const createCursoDisciplina = async (
 		}
 
 		// Verificar se a relação já existe
-		const [existingRows]: any = await pool.query(
-			"SELECT * FROM curso_disciplina WHERE idCurso = ? AND idDisciplina = ?",
-			[idCurso, idDisciplina],
-		);
-
-		if (Array.isArray(existingRows) && existingRows.length > 0) {
+		const existing = await disciplinaService.findCursoDisciplina(idCurso, idDisciplina);
+		if (existing) {
 			res.status(409).json({
 				message: "Esta disciplina já está vinculada a este curso",
 			});
 			return;
 		}
+
+		await disciplinaService.createCursoDisciplina(idCurso, idDisciplina);
 
 		res.status(201).json({
 			message: "Disciplina vinculada ao curso com sucesso",

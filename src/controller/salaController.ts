@@ -1,5 +1,16 @@
-import pool from "../config/db";
 import { Request, Response, NextFunction } from "express";
+import * as salaService from "../services/salaService";
+import { sala_tipoSala } from "../generated/prisma/client";
+
+// Mapeamento: valor da API -> valor do enum Prisma
+const tipoSalaMap: Record<string, sala_tipoSala> = {
+	"Laboratório": "laborat_rio",
+	"Sala de Aula": "sala_de_aula",
+	"Auditorio": "auditorio",
+	"Virtual": "virtual",
+};
+
+const tiposSalasValidos = Object.keys(tipoSalaMap);
 
 export const getSala = async (
 	req: Request,
@@ -7,7 +18,7 @@ export const getSala = async (
 	next: NextFunction,
 ) => {
 	try {
-		const [rows] = await pool.query("SELECT * FROM Salas");
+		const rows = await salaService.findAll();
 		res.status(200).json(rows);
 	} catch (error) {
 		next(error);
@@ -15,20 +26,20 @@ export const getSala = async (
 };
 
 export const getSalaById = async (
-	req: Request<{ idSala: string }>,
+	req: Request,
 	res: Response,
 	next: NextFunction,
 ) => {
 	try {
-		const idSala = req.params.idSala;
-		const [rows] = await pool.query("SELECT * FROM Salas WHERE idSala = ?", [
-			idSala,
-		]);
-		if (Array.isArray(rows) && rows.length === 0) {
+		const idSala = Number(req.params.idSala);
+		const row = await salaService.findById(idSala);
+
+		if (!row) {
 			res.status(404).json({ message: "Sala não encontrada" });
 			return;
 		}
-		res.status(200).json(rows);
+
+		res.status(200).json(row);
 	} catch (error) {
 		next(error);
 	}
@@ -46,29 +57,23 @@ export const createSala = async (
 			capacidadeSala,
 			tipoSala,
 			recursos,
-			localizcao,
+			localizacaoSala,
 		} = req.body;
 
 		// Validação dos campos obrigatórios
 		if (!codigoSala || !capacidadeSala || !tipoSala) {
 			res.status(400).json({
 				message:
-					"Os campos codigoSala, capacidadeSala e tipoSala são obrigatórios",
+					"Preencha o código, capacidade e tipo da sala",
 			});
 			return;
 		}
 
 		// Validação do tipo de sala
-		const tiposSalasValidos = [
-			"Laboratório",
-			"Sala de Aula",
-			"Auditorio",
-			"Virtual",
-		];
 		if (!tiposSalasValidos.includes(tipoSala)) {
 			res.status(400).json({
 				message: "Tipo de sala inválido",
-				tiposSalasValidos: tiposSalasValidos,
+				tiposSalasValidos,
 			});
 			return;
 		}
@@ -82,46 +87,26 @@ export const createSala = async (
 		}
 
 		// Verificar se o código da sala já existe
-		const [codigoExists]: any = await pool.query(
-			"SELECT idSala FROM Salas WHERE codigoSala = ?",
-			[codigoSala],
-		);
-
-		if (Array.isArray(codigoExists) && codigoExists.length > 0) {
+		const existing = await salaService.findByCodigoSala(codigoSala);
+		if (existing) {
 			res.status(409).json({
 				message: "Já existe uma sala com este código",
 			});
 			return;
 		}
 
-		// Inserir a sala
-		const [result] = await pool.query(
-			`INSERT INTO Salas 
-      (codigoSala, nomeSala, capacidadeSala, tipoSala, recursos, localizacaoSala) 
-      VALUES (?, ?, ?, ?, ?, ?)`,
-			[
-				codigoSala,
-				nomeSala,
-				capacidadeSala,
-				tipoSala,
-				recursos || null,
-				localizcao || null,
-			],
-		);
-
-		const idSala = (result as any).insertId;
+		const sala = await salaService.create({
+			codigoSala,
+			nomeSala: nomeSala || null,
+			capacidadeSala,
+			tipoSala: tipoSalaMap[tipoSala],
+			recursos: recursos || null,
+			localizacaoSala: localizacaoSala || null,
+		});
 
 		res.status(201).json({
 			message: "Sala criada com sucesso",
-			data: {
-				idSala,
-				codigoSala,
-				nomeSala,
-				capacidadeSala,
-				tipoSala,
-				recursos: recursos || null,
-				localizcao: localizcao || null,
-			},
+			data: sala,
 		});
 	} catch (error) {
 		next(error);

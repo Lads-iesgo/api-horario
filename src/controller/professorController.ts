@@ -1,5 +1,18 @@
-import pool from "../config/db";
 import { Request, Response, NextFunction } from "express";
+import * as professorService from "../services/professorService";
+import { professor_titulacao } from "../generated/prisma/client";
+import { isCursoInScope } from "../middleware/validateScope";
+
+// Mapeamento: valor da API -> valor do enum Prisma
+const titulacaoMap: Record<string, professor_titulacao> = {
+	"Graduado": "graduado",
+	"Especialista": "especialista",
+	"Mestre": "mestre",
+	"Doutor": "doutor",
+	"Doutora": "doutora",
+};
+
+const titulacoesValidas = Object.keys(titulacaoMap);
 
 export const getProfessor = async (
 	req: Request,
@@ -7,7 +20,7 @@ export const getProfessor = async (
 	next: NextFunction,
 ) => {
 	try {
-		const [rows] = await pool.query("SELECT * FROM Professores");
+		const rows = await professorService.findAll(req.scopedCursos!);
 		res.status(200).json(rows);
 	} catch (error) {
 		next(error);
@@ -15,34 +28,27 @@ export const getProfessor = async (
 };
 
 export const getProfessorById = async (
-	req: Request<{ idProfessor: number }>,
+	req: Request,
 	res: Response,
 	next: NextFunction,
 ) => {
 	try {
-		const idProfessor = req.params.idProfessor;
-		const [rows] = await pool.query(
-			"SELECT * FROM Professores WHERE idProfessor = ?",
-			[idProfessor],
-		);
-
-		res.status(200).json(rows);
+		const idProfessor = Number(req.params.idProfessor);
+		const row = await professorService.findById(idProfessor);
+		res.status(200).json(row);
 	} catch (error) {
 		next(error);
 	}
 };
 
 export const getProfessorByCoordenador = async (
-	req: Request<{ coordenador_idProfessor: number }>,
+	req: Request,
 	res: Response,
 	next: NextFunction,
 ) => {
 	try {
-		const coordenador_idProfessor = req.params.coordenador_idProfessor;
-		const [rows] = await pool.query(
-			"SELECT * FROM vw_professor_coordenador WHERE coordenador_idProfessor = ?",
-			[coordenador_idProfessor],
-		);
+		const idProfessor = Number(req.params.coordenador_idProfessor);
+		const rows = await professorService.findByCoordenador(idProfessor);
 		res.status(200).json(rows);
 	} catch (error) {
 		next(error);
@@ -50,17 +56,22 @@ export const getProfessorByCoordenador = async (
 };
 
 export const getProfessorByCurso = async (
-	req: Request<{ idCurso: number }>,
+	req: Request,
 	res: Response,
 	next: NextFunction,
 ) => {
 	try {
-		const idCurso = req.params.idCurso;
-		const [rows] = await pool.query(
-			"SELECT * FROM vw_professor_curso WHERE idCurso = ?",
-			[idCurso],
-		);
+		const idCurso = Number(req.params.idCurso);
 
+		// Validar escopo
+		if (!isCursoInScope(req.scopedCursos, idCurso)) {
+			res.status(403).json({
+				message: "Você não tem permissão para acessar dados deste curso",
+			});
+			return;
+		}
+
+		const rows = await professorService.findByCurso(idCurso);
 		res.status(200).json(rows);
 	} catch (error) {
 		next(error);
@@ -78,13 +89,13 @@ export const createProfessor = async (
 			email,
 			titulacao,
 			curriculo_lattes,
-			coordenador_idProfessor,
+			idCurso,
 		} = req.body;
 
 		// Validação dos campos obrigatórios
 		if (!nomeProfessor || !email || !titulacao) {
 			res.status(400).json({
-				message: "Os campos nomeProfessor, email e titulacao são obrigatórios",
+				message: "Preencha o nome, email e titulação do professor",
 			});
 			return;
 		}
@@ -99,74 +110,73 @@ export const createProfessor = async (
 		}
 
 		// Validação da titulação
-		const titulacoesValidas = [
-			"Graduado",
-			"Especialista",
-			"Mestre",
-			"Doutor",
-			"Pos Doutor",
-		];
 		if (!titulacoesValidas.includes(titulacao)) {
 			res.status(400).json({
 				message: "Titulação inválida",
-				titulacoesValidas: titulacoesValidas,
+				titulacoesValidas,
 			});
 			return;
 		}
 
 		// Verificar se o email já está cadastrado
-		const [emailExists]: any = await pool.query(
-			"SELECT idProfessor FROM Professores WHERE email = ?",
-			[email],
-		);
-
-		if (Array.isArray(emailExists) && emailExists.length > 0) {
+		const emailExists = await professorService.findByEmail(email);
+		if (emailExists) {
 			res.status(409).json({
 				message: "Este email já está cadastrado",
 			});
 			return;
 		}
 
-		// Se coordenador_idProfessor foi fornecido, validar se existe
-		if (coordenador_idProfessor) {
-			const [coordenadorRows]: any = await pool.query(
-				"SELECT idProfessor FROM Professores WHERE idProfessor = ?",
-				[coordenador_idProfessor],
-			);
+		// Resolver idCoordenador automaticamente com base no perfil do usuário
+		let idCoordenador: number | null = null;
+		const perfilLower = req.user!.nomePerfil.toLowerCase();
 
-			if (!Array.isArray(coordenadorRows) || coordenadorRows.length === 0) {
-				res.status(404).json({
-					message: "Professor coordenador não encontrado",
+		if (perfilLower === "coordenador") {
+			// Coordenador: vincular automaticamente pelo idUsuario da sessão
+			const professorCoordenador = await professorService.findByUsuarioId(req.user!.idUsuario);
+			if (!professorCoordenador) {
+				res.status(400).json({
+					message: "Seu perfil de coordenador não está vinculado a um registro de professor. Contate o administrador",
 				});
 				return;
 			}
+			idCoordenador = professorCoordenador.idProfessor;
+		} else if (perfilLower === "admin") {
+			// Admin: identificar o coordenador do curso selecionado
+			if (!idCurso) {
+				res.status(400).json({
+					message: "Selecione o curso para cadastrar o professor",
+				});
+				return;
+			}
+			const coordenadorDoCurso = await professorService.findCoordenadorByCurso(Number(idCurso));
+			if (!coordenadorDoCurso) {
+				res.status(404).json({
+					message: "Este curso não possui um coordenador cadastrado",
+				});
+				return;
+			}
+			idCoordenador = coordenadorDoCurso.idProfessor;
 		}
 
-		// Inserir o professor
-		const [result] = await pool.query(
-			`INSERT INTO Professores 
-            (nomeProfessor, email, titulacao, curriculo_lattes, coordenador_idProfessor) 
-            VALUES (?, ?, ?, ?, ?)`,
-			[
-				nomeProfessor,
-				email,
-				titulacao,
-				curriculo_lattes || null,
-				coordenador_idProfessor || null,
-			],
-		);
-
-		const idProfessor = (result as any).insertId;
+		// Criar professor
+		const professor = await professorService.create({
+			nomeProfessor,
+			email,
+			titulacao: titulacaoMap[titulacao],
+			curriculoLattes: curriculo_lattes || null,
+			idCoordenador,
+		});
 
 		res.status(201).json({
 			message: "Professor criado com sucesso",
 			data: {
-				idProfessor,
+				idProfessor: professor.idProfessor,
 				nomeProfessor,
 				email,
 				titulacao,
 				curriculo_lattes: curriculo_lattes || null,
-				coordenador_idProfessor: coordenador_idProfessor || null,
+				idCoordenador,
 			},
 		});
 	} catch (error) {
