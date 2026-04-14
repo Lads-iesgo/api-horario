@@ -168,6 +168,20 @@ export const getCelula = async (
 	}
 };
 
+export const getCelulaByProfessor = async (
+	req: Request,
+	res: Response,
+	next: NextFunction,
+) => {
+	try {
+		const idProfessor = Number(req.params.idProfessor);
+		const rows = await celulaService.findByProfessor(idProfessor);
+		res.status(200).json(rows);
+	} catch (error) {
+		next(error);
+	}
+};
+
 export const getCelulaCurso = async (
 	req: Request,
 	res: Response,
@@ -342,22 +356,23 @@ export const updateCelula = async (
 			return;
 		}
 
-		// Buscar todas as alocações relacionadas para excluí-las da validação
-		const relacionadas = await celulaService.findAlocacoesRelacionadas(
-			idDisciplina,
-			alocacaoAtual.semestre,
-			alocacaoAtual.grade.anoLetivo,
-			alocacaoAtual.grade.semestreLetivo,
-		);
-		const excludeIds = relacionadas.map((r) => r.idAlocacaoHorario);
-
-		// Grades de propagação
+		// Grades de propagação (computar uma vez e reutilizar)
 		const gradesAlvo = await celulaService.findGradesParaPropagacao(
 			idDisciplina,
 			alocacaoAtual.grade.anoLetivo,
 			alocacaoAtual.grade.semestreLetivo,
 		);
 		const propagacaoGradeIds = gradesAlvo.map((g) => g.idGrade);
+
+		// Buscar todas as alocações relacionadas para excluí-las da validação
+		const relacionadas = await celulaService.findAlocacoesRelacionadas(
+			idDisciplina,
+			alocacaoAtual.semestre,
+			alocacaoAtual.grade.anoLetivo,
+			alocacaoAtual.grade.semestreLetivo,
+			propagacaoGradeIds,
+		);
+		const excludeIds = relacionadas.map((r) => r.idAlocacaoHorario);
 
 		const conflict = await validateConflicts(
 			idGrade,

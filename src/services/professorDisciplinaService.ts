@@ -4,6 +4,12 @@ export const findAll = async () => {
 	return prisma.vw_disciplina_professor.findMany();
 };
 
+export const findByProfessor = async (idProfessor: number) => {
+	return prisma.vw_disciplina_professor.findMany({
+		where: { idProfessor },
+	});
+};
+
 export const findByDisciplina = async (idDisciplina: number) => {
 	return prisma.vw_disciplina_professor.findMany({
 		where: { idDisciplina },

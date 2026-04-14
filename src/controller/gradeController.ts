@@ -8,7 +8,8 @@ export const getGrade = async (
 	next: NextFunction,
 ) => {
 	try {
-		const rows = await gradeService.findAll(req.scopedCursos!);
+		const idCurso = req.query.idCurso ? Number(req.query.idCurso) : undefined;
+		const rows = await gradeService.findAll(req.scopedCursos!, idCurso);
 		res.status(200).json(rows);
 	} catch (error) {
 		next(error);

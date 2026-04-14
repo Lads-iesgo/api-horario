@@ -1,6 +1,7 @@
 import express from "express";
 import {
 	getCelula,
+	getCelulaByProfessor,
 	getCelulaCurso,
 	createCelula,
 	updateCelula,
@@ -13,6 +14,7 @@ const router = express.Router();
 
 //Rotas Celula
 router.get("/", authenticate, getCelula); // GET /celula
+router.get("/professor/:idProfessor", authenticate, getCelulaByProfessor); // GET /celula/professor/:idProfessor
 router.get("/:idCurso", authenticate, getCelulaCurso); // GET /celula/idCurso
 router.post("/", authenticate, authorize("Admin", "Coordenador"), createCelula); // POST /celula
 router.put("/:idCelula", authenticate, authorize("Admin", "Coordenador"), updateCelula); // PUT /celula/idCelula

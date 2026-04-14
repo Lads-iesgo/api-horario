@@ -10,6 +10,12 @@ export const findAll = async (scopedCursos: number[] | null) => {
 	});
 };
 
+export const findByProfessor = async (idProfessor: number) => {
+	return prisma.vw_celulas.findMany({
+		where: { idProfessor },
+	});
+};
+
 export const findByCurso = async (idCurso: number) => {
 	return prisma.vw_celulas.findMany({
 		where: { idCurso },
@@ -90,14 +96,16 @@ export const findGradesParaPropagacao = async (
 };
 
 // Busca todas as alocações relacionadas (mesma disciplina + semestre + grades do mesmo período letivo)
+// Aceita gradeIds pré-computados para evitar chamada duplicada a findGradesParaPropagacao
 export const findAlocacoesRelacionadas = async (
 	idDisciplina: number,
 	semestre: number,
 	anoLetivo: number,
 	semestreLetivo: number,
+	precomputedGradeIds?: number[],
 ) => {
-	const gradesAlvo = await findGradesParaPropagacao(idDisciplina, anoLetivo, semestreLetivo);
-	const gradeIds = gradesAlvo.map((g) => g.idGrade);
+	const gradeIds = precomputedGradeIds ??
+		(await findGradesParaPropagacao(idDisciplina, anoLetivo, semestreLetivo)).map((g) => g.idGrade);
 
 	return prisma.alocacao_horario.findMany({
 		where: {
@@ -119,6 +127,14 @@ export const findConflictDisciplinaMesmaGrade = async (
 	semestre: number,
 	excludeIds?: number[],
 ) => {
+	const conflictSelect = {
+		curso: true,
+		disciplina: true,
+		professor: true,
+		dia_semana: true,
+		semestreCelula: true,
+	} as const;
+
 	return prisma.vw_celulas.findMany({
 		where: {
 			idDisciplina,
@@ -126,6 +142,7 @@ export const findConflictDisciplinaMesmaGrade = async (
 			semestreCelula: semestre,
 			...(excludeIds?.length ? { idCelula: { notIn: excludeIds } } : {}),
 		},
+		select: conflictSelect,
 	});
 };
 
@@ -143,6 +160,13 @@ export const findConflictDisciplinaMesmoDia = async (
 			...(excludeIds?.length ? { idCelula: { notIn: excludeIds } } : {}),
 			...(excludeGradeIds?.length ? { idGrade: { notIn: excludeGradeIds } } : {}),
 		},
+		select: {
+			curso: true,
+			disciplina: true,
+			professor: true,
+			dia_semana: true,
+			semestreCelula: true,
+		},
 	});
 };
 
@@ -157,6 +181,13 @@ export const findConflictProfessorMesmoDia = async (
 			idProfessor,
 			idDiaSemana,
 			...(excludeIds?.length ? { idCelula: { notIn: excludeIds } } : {}),
+		},
+		select: {
+			curso: true,
+			disciplina: true,
+			professor: true,
+			dia_semana: true,
+			semestreCelula: true,
 		},
 	});
 };
@@ -178,6 +209,13 @@ export const findConflictProfessorMesmaDisciplina = async (
 			idGrade: { notIn: allExcludeGrades },
 			...(excludeIds?.length ? { idCelula: { notIn: excludeIds } } : {}),
 		},
+		select: {
+			curso: true,
+			disciplina: true,
+			professor: true,
+			dia_semana: true,
+			semestreCelula: true,
+		},
 	});
 };
 
@@ -198,22 +236,26 @@ export const createComPropagacao = async (
 		gradeIds.push(idGrade);
 	}
 
-	const criadas: number[] = [];
+	// Buscar todos os existentes de uma vez (em vez de N queries no loop)
+	const existentes = await prisma.alocacao_horario.findMany({
+		where: {
+			idGrade: { in: gradeIds },
+			idDisciplina,
+			semestre,
+		},
+		select: { idGrade: true },
+	});
+	const gradeIdsExistentes = new Set(existentes.map((e) => e.idGrade));
 
-	for (const gId of gradeIds) {
-		const existing = await prisma.alocacao_horario.findFirst({
-			where: { idGrade: gId, idDisciplina, semestre },
+	// Criar os faltantes em batch
+	const novos = gradeIds.filter((id) => !gradeIdsExistentes.has(id));
+	if (novos.length > 0) {
+		await prisma.alocacao_horario.createMany({
+			data: novos.map((gId) => ({ idGrade: gId, idDisciplina, idProfessor, idDiaSemana, semestre })),
 		});
-
-		if (!existing) {
-			const record = await prisma.alocacao_horario.create({
-				data: { idGrade: gId, idDisciplina, idProfessor, idDiaSemana, semestre },
-			});
-			criadas.push(record.idAlocacaoHorario);
-		}
 	}
 
-	return { criadas, totalGrades: gradeIds.length };
+	return { criadas: novos, totalGrades: gradeIds.length };
 };
 
 export const updateComPropagacao = async (

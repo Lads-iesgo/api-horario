@@ -36,6 +36,28 @@ export const getProfessorDisciplinaById = async (
 	}
 };
 
+export const getProfessorDisciplinaByProfessor = async (
+	req: Request,
+	res: Response,
+	next: NextFunction,
+) => {
+	try {
+		const idProfessor = Number(req.params.idProfessor);
+		const rows = await professorDisciplinaService.findByProfessor(idProfessor);
+
+		if (rows.length === 0) {
+			res
+				.status(404)
+				.json({ message: "Nenhuma disciplina vinculada a este professor" });
+			return;
+		}
+
+		res.status(200).json(rows);
+	} catch (error) {
+		next(error);
+	}
+};
+
 export const createProfessorDisciplina = async (
 	req: Request,
 	res: Response,

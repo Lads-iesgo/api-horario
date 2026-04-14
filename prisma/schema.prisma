@@ -31,6 +31,8 @@ model alocacao_horario {
   @@index([idGrade], map: "fk_grade_idx")
   @@index([idProfessor], map: "fk_professor_idx")
   @@index([idSala], map: "fk_sala_idx")
+  @@index([idDisciplina, semestre, idGrade])
+  @@index([idProfessor, idDiaSemana])
 }
 
 model curso {
@@ -148,6 +150,7 @@ model professor_curso {
 
   @@id([idProfessor, idCurso])
   @@index([idCurso], map: "fk_curso_professor_idx")
+  @@index([idCurso, isCoordenador])
 }
 
 model professor_disponibilidade {

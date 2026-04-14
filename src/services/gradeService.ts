@@ -1,8 +1,14 @@
 import prisma from "../lib/prisma";
 
-export const findAll = async (scopedCursos: number[] | null) => {
+export const findAll = async (scopedCursos: number[] | null, idCurso?: number) => {
+	const where: Record<string, unknown> = {};
+	if (idCurso) {
+		where.idCurso = idCurso;
+	} else if (scopedCursos) {
+		where.idCurso = { in: scopedCursos };
+	}
 	return prisma.grade.findMany({
-		where: scopedCursos ? { idCurso: { in: scopedCursos } } : undefined,
+		where: Object.keys(where).length > 0 ? where : undefined,
 	});
 };
 
