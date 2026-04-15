@@ -31,8 +31,6 @@ model alocacao_horario {
   @@index([idGrade], map: "fk_grade_idx")
   @@index([idProfessor], map: "fk_professor_idx")
   @@index([idSala], map: "fk_sala_idx")
-  @@index([idDisciplina, semestre, idGrade])
-  @@index([idProfessor, idDiaSemana])
 }
 
 model curso {
@@ -150,7 +148,6 @@ model professor_curso {
 
   @@id([idProfessor, idCurso])
   @@index([idCurso], map: "fk_curso_professor_idx")
-  @@index([idCurso, isCoordenador])
 }
 
 model professor_disponibilidade {
@@ -202,7 +199,7 @@ model usuario {
 }
 
 view vw_celulas {
-  idCelula         Int                    @unique @default(0)
+  idCelula         Int                    @default(0)
   semestreCelula   Int
   idCurso          Int                    @default(0)
   curso            String                 @db.VarChar(50)
@@ -238,21 +235,17 @@ view vw_celulas_por_curso {
   idDiaSemana    Int    @default(0)
   dia_semana     String @db.VarChar(45)
   idSala         Int?
-
-  @@unique([idCurso, idGrade, idDisciplina, idProfessor, idDiaSemana])
 }
 
 view vw_disciplinas_professores_por_curso {
-  idCurso       Int     @default(0)
-  curso         String  @default("") @db.VarChar(50)
-  idDisciplina  Int     @default(0)
-  disciplina    String  @default("") @db.VarChar(100)
-  modalidade    String? @db.VarChar(10)
-  idProfessor   Int     @default(0)
-  nomeProfessor String  @default("") @db.VarChar(100)
-  titulacao     String  @default("") @db.VarChar(12)
-
-  @@unique([idCurso, idDisciplina, idProfessor])
+  idCurso         Int                                              @default(0)
+  curso           String                                           @db.VarChar(50)
+  idDisciplina    Int                                              @default(0)
+  disciplina      String                                           @db.VarChar(100)
+  modalidade      vw_disciplinas_professores_por_curso_modalidade?
+  idProfessor     Int                                              @default(0)
+  professor_aptos String                                           @db.VarChar(100)
+  titulacao       vw_disciplinas_professores_por_curso_titulacao
 }
 
 view vw_disciplina_professor {
@@ -260,8 +253,6 @@ view vw_disciplina_professor {
   nomeProfessor  String @db.VarChar(100)
   idDisciplina   Int    @default(0)
   nomeDisciplina String @db.VarChar(100)
-
-  @@unique([idProfessor, idDisciplina])
 }
 
 view vw_disponbibilidade_professor {
@@ -269,8 +260,6 @@ view vw_disponbibilidade_professor {
   nomeProfessor String @db.VarChar(100)
   idDiaSemana   Int    @default(0)
   diaSemana     String @db.VarChar(45)
-
-  @@unique([idProfessor, idDiaSemana])
 }
 
 view vw_disciplina_curso {
@@ -280,8 +269,6 @@ view vw_disciplina_curso {
   periodo          Int?
   idCurso          Int    @default(0)
   nomeCurso        String @db.VarChar(50)
-
-  @@unique([idDisciplina, idCurso])
 }
 
 view vw_professor_curso {
@@ -291,8 +278,6 @@ view vw_professor_curso {
   idCurso       Int    @default(0)
   codigoCurso   String @default("") @db.VarChar(10)
   nomeCurso     String @default("") @db.VarChar(50)
-
-  @@unique([idProfessor, idCurso])
 }
 
 view vw_usuario_curso {
@@ -300,8 +285,6 @@ view vw_usuario_curso {
   nomeUsuario String @db.VarChar(100)
   idCurso     Int    @default(0)
   nomeCurso   String @db.VarChar(50)
-
-  @@unique([idUsuario, idCurso])
 }
 
 view vw_professor_coordenador {
@@ -310,8 +293,6 @@ view vw_professor_coordenador {
   isCoordenador Int    @default(0) @db.TinyInt
   idCurso       Int    @default(0)
   nomeCurso     String @db.VarChar(50)
-
-  @@unique([idProfessor, idCurso])
 }
 
 enum professor_titulacao {
@@ -323,6 +304,12 @@ enum professor_titulacao {
 }
 
 enum disciplina_modalidade {
+  presencial
+  sincrona
+  hibrido
+}
+
+enum vw_disciplinas_professores_por_curso_modalidade {
   presencial
   sincrona
   hibrido
@@ -340,6 +327,14 @@ enum sala_tipoSala {
   sala_de_aula @map("sala de aula")
   auditorio
   virtual
+}
+
+enum vw_disciplinas_professores_por_curso_titulacao {
+  graduado
+  especialista
+  mestre
+  doutor
+  doutora
 }
 
 enum vw_celulas_modalidade {

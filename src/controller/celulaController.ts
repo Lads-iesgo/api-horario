@@ -253,11 +253,12 @@ export const createCelula = async (
 			return;
 		}
 
-		// Buscar grades de propagação (cursos que compartilham a disciplina)
+		// Buscar grades de propagação (cursos que compartilham a disciplina no mesmo período)
 		const gradesAlvo = await celulaService.findGradesParaPropagacao(
 			idDisciplina,
 			novaCelula.anoLetivo,
 			novaCelula.semestreLetivo,
+			semestre,
 		);
 		const propagacaoGradeIds = gradesAlvo.map((g) => g.idGrade);
 
@@ -333,14 +334,14 @@ export const updateCelula = async (
 			return;
 		}
 
-		// Campos atualizáveis via propagação: professor, dia, semestre
+		// Campos atualizáveis
 		const idProfessor = req.body.idProfessor ?? alocacaoAtual.idProfessor;
 		const idDiaSemana = req.body.idDiaSemana ?? alocacaoAtual.idDiaSemana;
 		const semestre = req.body.semestre ?? alocacaoAtual.semestre;
-
-		// Grade e disciplina não mudam na propagação
+		const idDisciplina = req.body.idDisciplina ?? alocacaoAtual.idDisciplina;
 		const idGrade = alocacaoAtual.idGrade;
-		const idDisciplina = alocacaoAtual.idDisciplina;
+
+		const disciplinaMudou = idDisciplina !== alocacaoAtual.idDisciplina;
 
 		const novaCelula = await celulaService.getNovaCelulaInfo(
 			idProfessor,
@@ -356,21 +357,32 @@ export const updateCelula = async (
 			return;
 		}
 
-		// Grades de propagação (computar uma vez e reutilizar)
+		// Grades de propagação da NOVA disciplina (para validação de conflitos)
 		const gradesAlvo = await celulaService.findGradesParaPropagacao(
 			idDisciplina,
 			alocacaoAtual.grade.anoLetivo,
 			alocacaoAtual.grade.semestreLetivo,
+			semestre,
 		);
 		const propagacaoGradeIds = gradesAlvo.map((g) => g.idGrade);
 
-		// Buscar todas as alocações relacionadas para excluí-las da validação
+		// Buscar alocações relacionadas à disciplina ANTIGA para excluí-las da validação
+		const oldGradesAlvo = disciplinaMudou
+			? await celulaService.findGradesParaPropagacao(
+					alocacaoAtual.idDisciplina,
+					alocacaoAtual.grade.anoLetivo,
+					alocacaoAtual.grade.semestreLetivo,
+					alocacaoAtual.semestre,
+				)
+			: gradesAlvo;
+		const oldPropagacaoGradeIds = oldGradesAlvo.map((g) => g.idGrade);
+
 		const relacionadas = await celulaService.findAlocacoesRelacionadas(
-			idDisciplina,
+			alocacaoAtual.idDisciplina,
 			alocacaoAtual.semestre,
 			alocacaoAtual.grade.anoLetivo,
 			alocacaoAtual.grade.semestreLetivo,
-			propagacaoGradeIds,
+			oldPropagacaoGradeIds,
 		);
 		const excludeIds = relacionadas.map((r) => r.idAlocacaoHorario);
 
@@ -390,24 +402,49 @@ export const updateCelula = async (
 			return;
 		}
 
-		const resultado = await celulaService.updateComPropagacao(
-			idDisciplina,
-			alocacaoAtual.semestre,
-			alocacaoAtual.grade.anoLetivo,
-			alocacaoAtual.grade.semestreLetivo,
-			{ idProfessor, idDiaSemana, semestre },
-		);
+		if (disciplinaMudou) {
+			// Disciplina mudou: remove propagação antiga e cria nova (transação atômica)
+			const resultado = await celulaService.swapDisciplinaComPropagacao(
+				alocacaoAtual.idDisciplina,
+				alocacaoAtual.semestre,
+				alocacaoAtual.grade.anoLetivo,
+				alocacaoAtual.grade.semestreLetivo,
+				{ idGrade, idDisciplina, idProfessor, idDiaSemana, semestre },
+			);
 
-		res.status(200).json({
-			message: `Célula atualizada com sucesso (${resultado.count} registro(s) atualizados)`,
-			data: {
+			res.status(200).json({
+				message: `Disciplina substituída com sucesso (${resultado.removidas} removida(s), ${resultado.criadas} criada(s))`,
+				data: {
+					idDisciplina,
+					idProfessor,
+					idDiaSemana,
+					semestre,
+					removidas: resultado.removidas,
+					criadas: resultado.criadas,
+				},
+			});
+		} else {
+			// Só professor/dia/semestre mudaram: atualização simples com propagação
+			const resultado = await celulaService.updateComPropagacao(
 				idDisciplina,
-				idProfessor,
-				idDiaSemana,
-				semestre,
-				registrosAtualizados: resultado.count,
-			},
-		});
+				alocacaoAtual.semestre,
+				alocacaoAtual.grade.anoLetivo,
+				alocacaoAtual.grade.semestreLetivo,
+				idGrade,
+				{ idProfessor, idDiaSemana, semestre },
+			);
+
+			res.status(200).json({
+				message: `Célula atualizada com sucesso (${resultado.count} registro(s) atualizados)`,
+				data: {
+					idDisciplina,
+					idProfessor,
+					idDiaSemana,
+					semestre,
+					registrosAtualizados: resultado.count,
+				},
+			});
+		}
 	} catch (error) {
 		next(error);
 	}
@@ -446,6 +483,7 @@ export const deleteCelula = async (
 			alocacao.semestre,
 			alocacao.grade.anoLetivo,
 			alocacao.grade.semestreLetivo,
+			alocacao.idGrade,
 		);
 
 		res.status(200).json({

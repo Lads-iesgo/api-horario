@@ -72,18 +72,25 @@ export const findAlocacaoById = async (idAlocacaoHorario: number) => {
 // Propagação
 // ========================
 
-// Busca todas as grades (mesmo anoLetivo/semestreLetivo) de cursos que possuem a disciplina
+// Busca todas as grades de cursos que possuem a disciplina NO MESMO PERÍODO
+// O período determina em qual semestreLetivo a disciplina cai (ímpar → 1, par → 2)
 export const findGradesParaPropagacao = async (
 	idDisciplina: number,
 	anoLetivo: number,
 	semestreLetivo: number,
+	semestre?: number,
 ) => {
 	const cursosComDisciplina = await prisma.curso_disciplina.findMany({
-		where: { idDisciplina },
+		where: {
+			idDisciplina,
+			// Se o semestre (período) foi informado, só pegar cursos que têm a disciplina nesse mesmo período
+			...(semestre ? { periodo: semestre } : {}),
+		},
 		select: { idCurso: true },
 	});
 
 	const cursoIds = cursosComDisciplina.map((c) => c.idCurso);
+	if (cursoIds.length === 0) return [];
 
 	return prisma.grade.findMany({
 		where: {
@@ -105,7 +112,7 @@ export const findAlocacoesRelacionadas = async (
 	precomputedGradeIds?: number[],
 ) => {
 	const gradeIds = precomputedGradeIds ??
-		(await findGradesParaPropagacao(idDisciplina, anoLetivo, semestreLetivo)).map((g) => g.idGrade);
+		(await findGradesParaPropagacao(idDisciplina, anoLetivo, semestreLetivo, semestre)).map((g) => g.idGrade);
 
 	return prisma.alocacao_horario.findMany({
 		where: {
@@ -263,10 +270,14 @@ export const updateComPropagacao = async (
 	semestre: number,
 	anoLetivo: number,
 	semestreLetivo: number,
+	idGrade: number,
 	data: { idProfessor?: number; idDiaSemana?: number; semestre?: number },
 ) => {
-	const gradesAlvo = await findGradesParaPropagacao(idDisciplina, anoLetivo, semestreLetivo);
+	const gradesAlvo = await findGradesParaPropagacao(idDisciplina, anoLetivo, semestreLetivo, semestre);
 	const gradeIds = gradesAlvo.map((g) => g.idGrade);
+	if (!gradeIds.includes(idGrade)) {
+		gradeIds.push(idGrade);
+	}
 
 	return prisma.alocacao_horario.updateMany({
 		where: {
@@ -283,9 +294,13 @@ export const removeComPropagacao = async (
 	semestre: number,
 	anoLetivo: number,
 	semestreLetivo: number,
+	idGrade: number,
 ) => {
-	const gradesAlvo = await findGradesParaPropagacao(idDisciplina, anoLetivo, semestreLetivo);
+	const gradesAlvo = await findGradesParaPropagacao(idDisciplina, anoLetivo, semestreLetivo, semestre);
 	const gradeIds = gradesAlvo.map((g) => g.idGrade);
+	if (!gradeIds.includes(idGrade)) {
+		gradeIds.push(idGrade);
+	}
 
 	return prisma.alocacao_horario.deleteMany({
 		where: {
@@ -293,6 +308,69 @@ export const removeComPropagacao = async (
 			semestre,
 			idGrade: { in: gradeIds },
 		},
+	});
+};
+
+export const swapDisciplinaComPropagacao = async (
+	oldIdDisciplina: number,
+	oldSemestre: number,
+	anoLetivo: number,
+	semestreLetivo: number,
+	newData: {
+		idGrade: number;
+		idDisciplina: number;
+		idProfessor: number;
+		idDiaSemana: number;
+		semestre: number;
+	},
+) => {
+	// Buscar grades de propagação para a NOVA disciplina
+	const newGradesAlvo = await findGradesParaPropagacao(
+		newData.idDisciplina,
+		anoLetivo,
+		semestreLetivo,
+		newData.semestre,
+	);
+
+	const newGradeIds = newGradesAlvo.map((g) => g.idGrade);
+	if (!newGradeIds.includes(newData.idGrade)) {
+		newGradeIds.push(newData.idGrade);
+	}
+
+	// Buscar grades de propagação para a disciplina ANTIGA
+	const oldGradesAlvo = await findGradesParaPropagacao(
+		oldIdDisciplina,
+		anoLetivo,
+		semestreLetivo,
+		oldSemestre,
+	);
+	const oldGradeIds = oldGradesAlvo.map((g) => g.idGrade);
+	if (!oldGradeIds.includes(newData.idGrade)) {
+		oldGradeIds.push(newData.idGrade);
+	}
+
+	return prisma.$transaction(async (tx) => {
+		// 1. Remove propagação antiga
+		const removed = await tx.alocacao_horario.deleteMany({
+			where: {
+				idDisciplina: oldIdDisciplina,
+				semestre: oldSemestre,
+				idGrade: { in: oldGradeIds },
+			},
+		});
+
+		// 2. Cria nova propagação
+		await tx.alocacao_horario.createMany({
+			data: newGradeIds.map((gId) => ({
+				idGrade: gId,
+				idDisciplina: newData.idDisciplina,
+				idProfessor: newData.idProfessor,
+				idDiaSemana: newData.idDiaSemana,
+				semestre: newData.semestre,
+			})),
+		});
+
+		return { removidas: removed.count, criadas: newGradeIds.length };
 	});
 };
 

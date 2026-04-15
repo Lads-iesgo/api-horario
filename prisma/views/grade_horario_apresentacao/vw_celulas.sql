@@ -27,16 +27,16 @@ FROM
         (
           (
             (
-              `teste_grade_horario`.`alocacao_horario` `ah`
-              JOIN `teste_grade_horario`.`grade` `g` ON((`ah`.`idGrade` = `g`.`idGrade`))
+              `grade_horario_apresentacao`.`alocacao_horario` `ah`
+              JOIN `grade_horario_apresentacao`.`grade` `g` ON((`ah`.`idGrade` = `g`.`idGrade`))
             )
-            JOIN `teste_grade_horario`.`curso` `c` ON((`g`.`idCurso` = `c`.`idCurso`))
+            JOIN `grade_horario_apresentacao`.`curso` `c` ON((`g`.`idCurso` = `c`.`idCurso`))
           )
-          JOIN `teste_grade_horario`.`disciplina` `d` ON((`ah`.`idDisciplina` = `d`.`idDisciplina`))
+          JOIN `grade_horario_apresentacao`.`disciplina` `d` ON((`ah`.`idDisciplina` = `d`.`idDisciplina`))
         )
-        JOIN `teste_grade_horario`.`professor` `p` ON((`ah`.`idProfessor` = `p`.`idProfessor`))
+        JOIN `grade_horario_apresentacao`.`professor` `p` ON((`ah`.`idProfessor` = `p`.`idProfessor`))
       )
-      JOIN `teste_grade_horario`.`dia_semana` `ds` ON((`ah`.`idDiaSemana` = `ds`.`idDiaSemana`))
+      JOIN `grade_horario_apresentacao`.`dia_semana` `ds` ON((`ah`.`idDiaSemana` = `ds`.`idDiaSemana`))
     )
-    LEFT JOIN `teste_grade_horario`.`sala` `s` ON((`ah`.`idSala` = `s`.`idSala`))
+    LEFT JOIN `grade_horario_apresentacao`.`sala` `s` ON((`ah`.`idSala` = `s`.`idSala`))
   )

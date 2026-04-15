@@ -90,6 +90,7 @@ export const createProfessor = async (
 			titulacao,
 			curriculo_lattes,
 			idCurso,
+			idUsuario,
 		} = req.body;
 
 		// Validação dos campos obrigatórios
@@ -127,8 +128,20 @@ export const createProfessor = async (
 			return;
 		}
 
-		// Resolver idCoordenador automaticamente com base no perfil do usuário
+		// Validar idUsuario se fornecido (verificar se já está vinculado a outro professor)
+		if (idUsuario) {
+			const professorExistente = await professorService.findByUsuarioId(Number(idUsuario));
+			if (professorExistente) {
+				res.status(409).json({
+					message: "Este usuário já está vinculado a outro professor",
+				});
+				return;
+			}
+		}
+
+		// Resolver idCoordenador e idCurso com base no perfil do usuário
 		let idCoordenador: number | null = null;
+		let cursoVinculo: number | null = null;
 		const perfilLower = req.user!.nomePerfil.toLowerCase();
 
 		if (perfilLower === "coordenador") {
@@ -141,6 +154,8 @@ export const createProfessor = async (
 				return;
 			}
 			idCoordenador = professorCoordenador.idProfessor;
+			// Curso do coordenador (primeiro do escopo)
+			cursoVinculo = req.scopedCursos?.[0] ?? null;
 		} else if (perfilLower === "admin") {
 			// Admin: identificar o coordenador do curso selecionado
 			if (!idCurso) {
@@ -157,15 +172,18 @@ export const createProfessor = async (
 				return;
 			}
 			idCoordenador = coordenadorDoCurso.idProfessor;
+			cursoVinculo = Number(idCurso);
 		}
 
-		// Criar professor
+		// Criar professor + vínculo com curso (professor_curso)
 		const professor = await professorService.create({
 			nomeProfessor,
 			email,
 			titulacao: titulacaoMap[titulacao],
 			curriculoLattes: curriculo_lattes || null,
 			idCoordenador,
+			idUsuario: idUsuario ? Number(idUsuario) : null,
+			idCurso: cursoVinculo,
 		});
 
 		res.status(201).json({
@@ -177,6 +195,8 @@ export const createProfessor = async (
 				titulacao,
 				curriculo_lattes: curriculo_lattes || null,
 				idCoordenador,
+				idUsuario: idUsuario ? Number(idUsuario) : null,
+				idCurso: cursoVinculo,
 			},
 		});
 	} catch (error) {

@@ -55,6 +55,29 @@ export const create = async (data: {
 	titulacao: professor_titulacao;
 	curriculoLattes?: string | null;
 	idCoordenador?: number | null;
+	idUsuario?: number | null;
+	idCurso?: number | null;
+	isCoordenador?: number;
 }) => {
-	return prisma.professor.create({ data });
+	const { idCurso, isCoordenador: isCoordenadorFlag, ...professorData } = data;
+
+	const professor = await prisma.professor.create({
+		data: {
+			...professorData,
+			idUsuario: professorData.idUsuario ?? null,
+		},
+	});
+
+	// Se idCurso foi informado, criar o vínculo professor_curso
+	if (idCurso) {
+		await prisma.professor_curso.create({
+			data: {
+				idProfessor: professor.idProfessor,
+				idCurso,
+				isCoordenador: isCoordenadorFlag ?? 0,
+			},
+		});
+	}
+
+	return professor;
 };

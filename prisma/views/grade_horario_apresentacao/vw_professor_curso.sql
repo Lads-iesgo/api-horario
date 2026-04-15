@@ -8,10 +8,10 @@ SELECT
 FROM
   (
     (
-      `teste_grade_horario`.`professor` `p`
-      JOIN `teste_grade_horario`.`professor_curso` `pc` ON((`p`.`idProfessor` = `pc`.`idProfessor`))
+      `grade_horario_apresentacao`.`professor` `p`
+      JOIN `grade_horario_apresentacao`.`professor_curso` `pc` ON((`p`.`idProfessor` = `pc`.`idProfessor`))
     )
-    JOIN `teste_grade_horario`.`curso` `c` ON((`pc`.`idCurso` = `c`.`idCurso`))
+    JOIN `grade_horario_apresentacao`.`curso` `c` ON((`pc`.`idCurso` = `c`.`idCurso`))
   )
 UNION
 ALL
@@ -24,11 +24,11 @@ SELECT
   `c`.`nomeCurso` AS `nomeCurso`
 FROM
   (
-    `teste_grade_horario`.`professor` `p`
-    JOIN `teste_grade_horario`.`curso` `c`
+    `grade_horario_apresentacao`.`professor` `p`
+    JOIN `grade_horario_apresentacao`.`curso` `c`
   )
 WHERE
-  (`p`.`idProfessor` IN (9001, 9002))
+  (`p`.`idProfessor` IN (1, 2))
 ORDER BY
   `nomeCurso`,
   `nomeProfessor`

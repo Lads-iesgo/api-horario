@@ -8,8 +8,8 @@ SELECT
 FROM
   (
     (
-      `teste_grade_horario`.`disciplina` `d`
-      JOIN `teste_grade_horario`.`curso_disciplina` `cd` ON((`d`.`idDisciplina` = `cd`.`idDisciplina`))
+      `grade_horario_apresentacao`.`disciplina` `d`
+      JOIN `grade_horario_apresentacao`.`curso_disciplina` `cd` ON((`d`.`idDisciplina` = `cd`.`idDisciplina`))
     )
-    JOIN `teste_grade_horario`.`curso` `c` ON((`cd`.`idCurso` = `c`.`idCurso`))
+    JOIN `grade_horario_apresentacao`.`curso` `c` ON((`cd`.`idCurso` = `c`.`idCurso`))
   )
